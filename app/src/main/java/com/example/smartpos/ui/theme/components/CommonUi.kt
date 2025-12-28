@@ -43,7 +43,7 @@ fun ActionCard(title: String, icon: ImageVector, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.padding(8.dp).fillMaxWidth().height(140.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2D2D2D))
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2D2D2D)) //
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
