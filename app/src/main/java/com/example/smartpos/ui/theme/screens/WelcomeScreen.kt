@@ -26,7 +26,7 @@ fun WelcomeScreen(onEnterApp: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "TouchPay",
+            text = "Instant POS",
             color = Color.White,
             fontSize = 42.sp,
             fontWeight = FontWeight.Bold
@@ -38,12 +38,10 @@ fun WelcomeScreen(onEnterApp: () -> Unit) {
         )
 
         Spacer(modifier = Modifier.height(60.dp))
-
         // Giả lập hình ảnh thẻ (Bạn có thể thay bằng Image thực tế)
         Box(modifier = Modifier.size(200.dp), contentAlignment = Alignment.Center) {
-            // Vẽ các hình chữ nhật giả lập thẻ ngân hàng
-            Card(modifier = Modifier.size(160.dp, 100.dp).offset(y = (-20).dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {}
-            Card(modifier = Modifier.size(160.dp, 100.dp).offset(x = 10.dp, y = 10.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {}
+            Card(modifier = Modifier.size(160.dp, 100.dp).offset(y = (-20).dp), colors = CardDefaults.cardColors(containerColor = Color.LightGray)) {}
+            Card(modifier = Modifier.size(160.dp, 100.dp).offset(x = 10.dp, y = 10.dp), colors = CardDefaults.cardColors(containerColor = Color.DarkGray)) {}
         }
 
         Spacer(modifier = Modifier.height(100.dp))

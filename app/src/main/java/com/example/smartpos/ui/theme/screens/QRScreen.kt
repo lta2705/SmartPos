@@ -1,12 +1,20 @@
 package com.example.smartpos.ui.theme.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -20,7 +28,7 @@ import com.example.smartpos.ui.theme.components.NumericKeypad
 import com.example.smartpos.viewmodel.PosViewModel
 
 @Composable
-fun SaleScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Unit) {
+fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Unit) {
     val amount by viewModel.amount.collectAsState()
 
     Column(

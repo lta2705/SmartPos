@@ -36,7 +36,7 @@ class PosViewModel : ViewModel() {
     }
 
     val totalSum: StateFlow<Double> = _transactionHistory
-        .map { list -> list.sumOf { it.amount.replace(" USD", "").toDoubleOrNull() ?: 0.0 } }
+        .map { list -> list.sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     fun updateAmount(digit: String) {
@@ -51,6 +51,16 @@ class PosViewModel : ViewModel() {
 
     fun selectTip(percent: Int) {
         _selectedTip.value = percent
+    }
+
+    fun processNfcPayment(tagId: String) {
+        viewModelScope.launch {
+            _paymentState.value = PaymentState.Processing
+
+            delay(2000)
+            
+            _paymentState.value = PaymentState.Approved
+        }
     }
 
     fun processPayment() {

@@ -52,7 +52,7 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
             // Sửa đổi: Truyền totalAmount vào String.format
             viewModel.addTransaction(
                 name = "Sale Giao dịch",
-                amount = String.format("%.2f USD", totalAmount)
+                amount = String.format("%.2f VND", totalAmount)
             )
             onPaymentSuccess()
         }
@@ -96,7 +96,7 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Amount", color = Color.Gray, fontSize = 16.sp)
             Text(
-                text = "${String.format("%.2f", totalAmount)} USD",
+                text = "${String.format("%.2f", totalAmount)} VND",
                 fontSize = 42.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White

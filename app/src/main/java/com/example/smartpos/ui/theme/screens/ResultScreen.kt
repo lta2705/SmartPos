@@ -55,7 +55,7 @@ fun ResultScreen(viewModel: PosViewModel, onClose: () -> Unit) {
         )
 
         Text(
-            text = "$${amount} USD",
+            text = "$${amount} VND",
             fontSize = 24.sp,
             color = Color.White
         )

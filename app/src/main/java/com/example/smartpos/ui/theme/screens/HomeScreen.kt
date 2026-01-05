@@ -20,6 +20,7 @@ import com.example.smartpos.ui.theme.PurplePrimary
 @Composable
 fun HomeScreen(
     onSaleClick: () -> Unit,
+    onQRClick: () -> Unit,
     onRefundClick: () -> Unit,
     onBalanceClick: () -> Unit
 ) {
@@ -60,7 +61,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item { ActionCard("Sale", Icons.Default.ShoppingCart, onSaleClick) }
-                item { ActionCard("Cancellation", Icons.Default.Close, {}) }
+            item { ActionCard("QR", Icons.Default.Close, {}) }
                 item { ActionCard("Refund", Icons.Default.History, onRefundClick) }
                 item { ActionCard("Balance", Icons.Default.AccountBalanceWallet, onBalanceClick) }
             }

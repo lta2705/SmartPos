@@ -23,15 +23,21 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             HomeScreen(
                 onSaleClick = { navController.navigate("sale") },
                 onRefundClick = { navController.navigate("sale") },
-                onBalanceClick = { navController.navigate("balance") }
+                onBalanceClick = { navController.navigate("balance")
+                },
+                onQRClick = {navController.navigate("qr")}
             )
         }
 
         // 3. Nhập số tiền bán hàng
         composable("sale") {
-            SaleScreen(viewModel = viewModel, onConfirm = {
+            SaleScreen(viewModel = viewModel
+                , onConfirm = {
                 navController.navigate("tip")
-            })
+            },
+                onReturn ={
+                    navController.navigate("home")
+                })
         }
 
         // 4. Chọn tiền Tip
