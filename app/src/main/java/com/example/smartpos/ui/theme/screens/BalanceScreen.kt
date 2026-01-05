@@ -1,54 +1,54 @@
 package com.example.smartpos.ui.theme.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-// Model cho dữ liệu giao dịch
-data class Transaction(val name: String, val amount: String)
+import com.example.smartpos.viewmodel.PosViewModel
+import com.example.smartpos.viewmodel.Transaction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BalanceScreen(onBack: () -> Unit) {
-    // Dữ liệu giả lập theo ảnh mẫu
-    val transactions = listOf(
-        Transaction("Cortado", "8 USD"),
-        Transaction("Banana bread", "4 USD"),
-        Transaction("Cold brew latte", "7.50"),
-        Transaction("Lemon fresh", "12"),
-        Transaction("Espresso +5% tip", "5 USD"),
-        Transaction("Avocado sandwich", "14 USD")
-    )
+fun BalanceScreen(viewModel: PosViewModel, onBack: () -> Unit) {
+    val transactions by viewModel.transactionHistory.collectAsState()
+    val totalSum by viewModel.totalSum.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Balance", color = Color.White) },
+                title = { Text("Balance", color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF121212)
+                )
             )
         },
         containerColor = Color(0xFF121212),
         bottomBar = {
-            // Nút Print Current Balance ở dưới cùng
+            // Nút Print Current Balance
             Button(
-                onClick = { /* Logic in hóa đơn */ },
+                onClick = { /* Logic in hóa đơn có thể thêm vào ViewModel */ },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
@@ -56,7 +56,12 @@ fun BalanceScreen(onBack: () -> Unit) {
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4FB6D)),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Print Current Balance", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Print Current Balance",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
             }
         }
     ) { paddingValues ->
@@ -66,24 +71,52 @@ fun BalanceScreen(onBack: () -> Unit) {
                 .padding(horizontal = 16.dp)
                 .fillMaxSize()
         ) {
-            // 1. Summary Cards Section (Màu tím)
+            // 1. Summary Cards Section (Thông tin tổng hợp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SummaryCard(Modifier.weight(1f), "Opening time", "10:00", "Closing time", "N/A")
-                SummaryCard(Modifier.weight(1f), "Total transactions", "17", "Transactions sum", "408.21 USD")
+                SummaryCard(
+                    modifier = Modifier.weight(1f),
+                    label1 = "Opening time",
+                    value1 = "10:00",
+                    label2 = "Closing time",
+                    value2 = "N/A"
+                )
+                SummaryCard(
+                    modifier = Modifier.weight(1f),
+                    label1 = "Total transactions",
+                    value1 = "${transactions.size}",
+                    label2 = "Transactions sum",
+                    value2 = String.format("%.2f USD", totalSum)
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 2. Transactions List
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(transactions) { item ->
-                    TransactionItem(item)
+            Text(
+                text = "Recent Transactions",
+                color = Color.Gray,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            if (transactions.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No transactions yet", color = Color.DarkGray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(transactions.reversed()) { transaction ->
+                        TransactionItem(transaction)
+                    }
                 }
             }
         }
@@ -91,7 +124,13 @@ fun BalanceScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun SummaryCard(modifier: Modifier, label1: String, value1: String, label2: String, value2: String) {
+fun SummaryCard(
+    modifier: Modifier,
+    label1: String,
+    value1: String,
+    label2: String,
+    value2: String
+) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color(0xFF6C5CE7)),
@@ -120,8 +159,17 @@ fun TransactionItem(transaction: Transaction) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(transaction.name, color = Color.White, fontSize = 16.sp)
-            Text(transaction.amount, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text(
+                text = transaction.name,
+                color = Color.White,
+                fontSize = 16.sp
+            )
+            Text(
+                text = transaction.amount,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

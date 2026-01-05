@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartpos.viewmodel.PaymentState
 import com.example.smartpos.viewmodel.PosViewModel
-import kotlinx.coroutines.delay
 
 @Composable
 fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
@@ -26,11 +25,11 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
     val selectedTip by viewModel.selectedTip.collectAsState()
     val paymentState by viewModel.paymentState.collectAsState()
 
-    // Tính toán tổng tiền cuối cùng
+    // 1. Tính toán tổng tiền (Gốc + Tip)
     val baseAmount = amountStr.toDoubleOrNull() ?: 0.0
     val totalAmount = baseAmount + (baseAmount * (selectedTip / 100.0))
 
-    // Hiệu ứng nhấp nháy cho icon NFC
+    // 2. Hiệu ứng nhấp nháy cho icon NFC
     val infiniteTransition = rememberInfiniteTransition(label = "NFCAnimation")
     val alpha by infiniteTransition.animateFloat(
         initialValue = 0.4f,
@@ -42,24 +41,31 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
         label = "Alpha"
     )
 
-    // Tự động giả lập quẹt thẻ khi vào màn hình này
+    // 3. Tự động giả lập quẹt thẻ khi vào màn hình này
     LaunchedEffect(Unit) {
         viewModel.processPayment()
     }
 
-    // Theo dõi trạng thái để chuyển màn hình khi Approved
+    // 4. THEO DÕI TRẠNG THÁI: Lưu giao dịch khi thành công
     LaunchedEffect(paymentState) {
         if (paymentState is PaymentState.Approved) {
+            // Sửa đổi: Truyền totalAmount vào String.format
+            viewModel.addTransaction(
+                name = "Sale Giao dịch",
+                amount = String.format("%.2f USD", totalAmount)
+            )
             onPaymentSuccess()
         }
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // 1. Phần tiêu đề & Icon phía trên
+        // PHẦN TRÊN: Tiêu đề & Icon NFC
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Sale", fontSize = 18.sp, color = Color.Gray)
             Spacer(modifier = Modifier.height(32.dp))
@@ -73,7 +79,9 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
                 imageVector = Icons.Default.Contactless,
                 contentDescription = "NFC",
                 tint = Color(0xFF6C5CE7),
-                modifier = Modifier.size(80.dp).alpha(alpha) // Áp dụng animation alpha
+                modifier = Modifier
+                    .size(80.dp)
+                    .alpha(alpha)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -84,7 +92,7 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
             )
         }
 
-        // 2. Phần hiển thị số tiền chính giữa
+        // PHẦN GIỮA: Hiển thị tổng số tiền
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Amount", color = Color.Gray, fontSize = 16.sp)
             Text(
@@ -95,7 +103,7 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
             )
         }
 
-        // 3. Hướng dẫn đút thẻ phía dưới
+        // PHẦN DƯỚI: Hướng dẫn đút thẻ & Progress
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Insert your credit card here", color = Color.Gray)
             Spacer(modifier = Modifier.height(8.dp))
@@ -106,11 +114,12 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
                 modifier = Modifier.size(32.dp)
             )
 
-            // Loading indicator nếu đang Processing
             if (paymentState is PaymentState.Processing) {
                 Spacer(modifier = Modifier.height(16.dp))
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
                     color = Color(0xFFC4FB6D),
                     trackColor = Color.DarkGray
                 )

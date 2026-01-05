@@ -73,7 +73,6 @@ fun TipScreen(viewModel: PosViewModel, onConfirm: () -> Unit) {
                 )
             }
 
-            // Nút "No Tip" chiếm toàn bộ chiều rộng hàng cuối
             item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
                 OutlinedButton(
                     onClick = { viewModel.selectTip(0) },
