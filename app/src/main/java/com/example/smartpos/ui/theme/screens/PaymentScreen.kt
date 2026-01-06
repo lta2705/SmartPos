@@ -51,6 +51,7 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
         if (paymentState is PaymentState.Approved) {
             // Sửa đổi: Truyền totalAmount vào String.format
             viewModel.addTransaction(
+                type = com.example.smartpos.viewmodel.TransactionType.SALE,
                 name = "Sale Giao dịch",
                 amount = String.format("%.2f VND", totalAmount)
             )

@@ -22,7 +22,9 @@ fun HomeScreen(
     onSaleClick: () -> Unit,
     onQRClick: () -> Unit,
     onRefundClick: () -> Unit,
-    onBalanceClick: () -> Unit
+    onBalanceClick: () -> Unit,
+    onVoidClick: () -> Unit,
+    onSettlementClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -61,9 +63,11 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item { ActionCard("Sale", Icons.Default.ShoppingCart, onSaleClick) }
-            item { ActionCard("QR", Icons.Default.Close, {}) }
+                item { ActionCard("QR", Icons.Default.QrCode, onQRClick) }
+                item { ActionCard("Void", Icons.Default.RemoveCircle, onVoidClick) }
                 item { ActionCard("Refund", Icons.Default.History, onRefundClick) }
                 item { ActionCard("Balance", Icons.Default.AccountBalanceWallet, onBalanceClick) }
+                item { ActionCard("Settlement", Icons.Default.Assessment, onSettlementClick) }
             }
         }
     }

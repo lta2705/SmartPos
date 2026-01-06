@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartpos.ui.theme.components.NumericKeypad
 import com.example.smartpos.viewmodel.PosViewModel
+import com.example.smartpos.viewmodel.TransactionType
 
 @Composable
 fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Unit) {
@@ -50,7 +51,7 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
             }
 
             Text(
-                text = "Sale",
+                text = "QR Payment",
                 fontSize = 20.sp,
                 color = Color.Gray,
                 fontWeight = FontWeight.Medium
@@ -61,7 +62,7 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
         Spacer(modifier = Modifier.height(60.dp))
 
         Text(
-            text = amount + "VND",
+            text = amount + " VND",
             fontSize = 48.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White
@@ -74,7 +75,18 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = onConfirm,
+            onClick = {
+                // Tạo giao dịch QR khi confirm
+                val amountValue = amount.toDoubleOrNull() ?: 0.0
+                if (amountValue > 0) {
+                    viewModel.addTransaction(
+                        type = TransactionType.QR,
+                        name = "QR Giao dịch",
+                        amount = String.format("%.2f VND", amountValue)
+                    )
+                }
+                onConfirm()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(60.dp),

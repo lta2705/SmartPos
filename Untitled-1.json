@@ -1,0 +1,27 @@
+{
+  "everything": {
+    "command": "npx",
+    "args": [
+      "@modelcontextprotocol/server-everything"
+    ],
+    "type": "stdio"
+  },
+  "io.github.github/github-mcp-server": {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": {
+      "Authorization": "${input:Authorization}"
+    },
+    "gallery": "https://api.mcp.github.com",
+    "version": "0.24.0"
+  },
+  "git": {
+    "command": "uvx",
+    "args": [
+      "mcp-server-git",
+      "--repository",
+      "/Users/MAC/AndroidStudioProjects/SmartPos2"
+    ],
+    "type": "stdio"
+  }
+}

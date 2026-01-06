@@ -1,7 +1,9 @@
 package com.example.smartpos
 
+import android.content.Intent
 import android.nfc.NfcAdapter
 import android.nfc.Tag
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -12,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
+import com.example.smartpos.service.TcpService
 import com.example.smartpos.ui.theme.TouchPayTheme
 import com.example.smartpos.ui.theme.navigation.PosNavGraph
 import com.example.smartpos.viewmodel.PosViewModel
@@ -23,6 +26,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        startTcpService()
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
@@ -38,6 +43,15 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     PosNavGraph(navController = navController, viewModel = sharedViewModel)
                 }
             }
+        }
+    }
+
+    private fun startTcpService() {
+        val intent = Intent(this, TcpService::class.java)
+        try {
+            startForegroundService(intent)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Cannot initialize TCP service: ${e.message}")
         }
     }
 
@@ -63,9 +77,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onTagDiscovered(tag: Tag?) {
         if (tag != null) {
-
             val tagId = tag.id.joinToString("") { "%02X".format(it) }
-            Log.d("NFC", "Đã phát hiện thẻ ID: $tagId")
+            Log.d("NFC", " ID: $tagId")
 
             sharedViewModel.processNfcPayment(tagId)
         }

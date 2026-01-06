@@ -22,10 +22,11 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
         composable("home") {
             HomeScreen(
                 onSaleClick = { navController.navigate("sale") },
-                onRefundClick = { navController.navigate("sale") },
-                onBalanceClick = { navController.navigate("balance")
-                },
-                onQRClick = {navController.navigate("qr")}
+                onRefundClick = { navController.navigate("refund") },
+                onBalanceClick = { navController.navigate("balance") },
+                onQRClick = { navController.navigate("qr") },
+                onVoidClick = { navController.navigate("void") },
+                onSettlementClick = { navController.navigate("settlement") }
             )
         }
 
@@ -68,7 +69,45 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             )
         }
 
-        // 7. Kết quả giao dịch
+        // 6. Màn hình QR Payment
+        composable("qr") {
+            QRScreen(
+                viewModel = viewModel,
+                onConfirm = {
+                    viewModel.reset()
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onReturn = { navController.navigate("home") }
+            )
+        }
+
+        // 7. Màn hình Void (hiển thị giao dịch Sale)
+        composable("void") {
+            VoidScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        // 8. Màn hình Refund (hiển thị giao dịch QR)
+        composable("refund") {
+            RefundScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        // 9. Màn hình Settlement
+        composable("settlement") {
+            SettlementScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        // 10. Kết quả giao dịch
         composable("result") {
             ResultScreen(
                 viewModel = viewModel,
