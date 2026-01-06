@@ -2,6 +2,10 @@ package com.example.smartpos.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.smartpos.model.CardData
+import com.example.smartpos.model.TcpMessage
+import com.example.smartpos.network.TcpConnectionService
+import com.example.smartpos.network.TcpConnectionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,6 +40,18 @@ class PosViewModel : ViewModel() {
 
     private val _transactionHistory = MutableStateFlow<List<Transaction>>(emptyList())
     val transactionHistory = _transactionHistory.asStateFlow()
+
+    // TCP Connection Service
+    private val tcpService = TcpConnectionService()
+    val tcpConnectionState: StateFlow<TcpConnectionState> = tcpService.connectionState
+
+    // NFC Data
+    private val _nfcData = MutableStateFlow<String?>(null)
+    val nfcData = _nfcData.asStateFlow()
+
+    // Parsed Card Data
+    private val _cardData = MutableStateFlow<CardData?>(null)
+    val cardData = _cardData.asStateFlow()
 
     // Lọc giao dịch theo loại
     val saleTransactions: StateFlow<List<Transaction>> = _transactionHistory
@@ -164,5 +180,165 @@ class PosViewModel : ViewModel() {
         _amount.value = "0"
         _selectedTip.value = 0
         _paymentState.value = PaymentState.Idle
+        _nfcData.value = null
+        _cardData.value = null
+    }
+
+    // ============ TCP Connection Methods ============
+    
+    /**
+     * Bắt đầu kết nối TCP tới endpoint
+     */
+    fun startTcpConnection() {
+        viewModelScope.launch {
+            tcpService.connect()
+        }
+    }
+
+    /**
+     * Thử lại kết nối TCP
+     */
+    fun retryTcpConnection() {
+        viewModelScope.launch {
+            tcpService.resetState()
+            tcpService.connect()
+        }
+    }
+
+    /**
+     * Ngắt kết nối TCP
+     */
+    fun disconnectTcp() {
+        tcpService.disconnect()
+    }
+
+    /**
+     * Gửi dữ liệu qua TCP (nếu cần)
+     */
+    fun sendTcpData(data: String) {
+        viewModelScope.launch {
+            tcpService.sendData(data)
+        }
+    }
+
+    /**
+     * Reset TCP state về Idle
+     */
+    fun resetTcpState() {
+        tcpService.resetState()
+    }
+
+    // ============ NFC & Card Processing Methods ============
+
+    /**
+     * Gửi transaction started message (msgType=2, status=STARTED)
+     */
+    fun sendTransactionStarted(amount: Double) {
+        viewModelScope.launch {
+            val message = TcpMessage.createTransactionStarted(
+                trmId = tcpService.getTerminalId(),
+                amount = String.format("%.2f", amount)
+            )
+            tcpService.sendTransactionMessage(message)
+        }
+    }
+
+    /**
+     * Bắt đầu đọc NFC
+     */
+    fun startNfcReading() {
+        _paymentState.value = PaymentState.Processing
+        
+        // Giả lập đọc NFC sau 5 giây (thay bằng NFC thực)
+        viewModelScope.launch {
+            delay(5000)
+            
+            // Mock NFC data - format: name|card|expiry|scheme
+            val mockNfcData = "JOHN DOE|**** **** **** 1234|12/25|VISA"
+            simulateNfcRead(mockNfcData)
+        }
+    }
+
+    /**
+     * Giả lập đọc NFC (thay thế bằng NFC reader thực)
+     */
+    fun simulateNfcRead(nfcRawData: String) {
+        _nfcData.value = nfcRawData
+        
+        // Parse card data
+        val parsed = CardData.fromNfcData(nfcRawData)
+        if (parsed != null) {
+            _cardData.value = parsed
+            _paymentState.value = PaymentState.Approved
+        } else {
+            _paymentState.value = PaymentState.Error("Invalid card data")
+        }
+    }
+
+    /**
+     * Xử lý NFC timeout
+     */
+    fun onNfcTimeout() {
+        _paymentState.value = PaymentState.Error("Transaction timeout")
+        
+        // Gửi timeout message tới server
+        viewModelScope.launch {
+            val message = TcpMessage(
+                msgType = TcpMessage.MSG_TYPE_TRANSACTION,
+                trmId = tcpService.getTerminalId(),
+                status = TcpMessage.STATUS_TIMEOUT
+            )
+            tcpService.sendTransactionMessage(message)
+        }
+    }
+
+    /**
+     * Xử lý khi transaction thành công
+     */
+    fun onTransactionSuccess() {
+        val card = _cardData.value ?: return
+        val totalAmount = getTotalAmount()
+        
+        // Lưu transaction vào history
+        addTransaction(
+            type = TransactionType.SALE,
+            name = "Sale - ${card.cardScheme}",
+            amount = String.format("%.2f VND", totalAmount)
+        )
+        
+        // Gửi completed message tới server
+        viewModelScope.launch {
+            val message = TcpMessage.createTransactionCompleted(
+                trmId = tcpService.getTerminalId(),
+                transactionId = java.util.UUID.randomUUID().toString(),
+                cardData = _nfcData.value ?: ""
+            )
+            tcpService.sendTransactionMessage(message)
+        }
+        
+        _paymentState.value = PaymentState.Approved
+    }
+
+    /**
+     * Xử lý khi transaction thất bại
+     */
+    fun onTransactionError(reason: String) {
+        // Gửi failed message tới server
+        viewModelScope.launch {
+            val message = TcpMessage.createTransactionFailed(
+                trmId = tcpService.getTerminalId(),
+                reason = reason
+            )
+            tcpService.sendTransactionMessage(message)
+        }
+        
+        _paymentState.value = PaymentState.Error(reason)
+    }
+
+    /**
+     * Get current card data
+     */
+    fun getCurrentCardData(): CardData? {
+        return _cardData.value
     }
 }

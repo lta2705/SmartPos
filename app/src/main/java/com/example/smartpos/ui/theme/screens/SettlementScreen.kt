@@ -98,11 +98,11 @@ fun SettlementScreen(viewModel: PosViewModel, onBack: () -> Unit) {
 @Composable
 private fun SummarySection(transactions: List<Transaction>) {
     val saleTotal = transactions
-        .filter { it.type == TransactionType.SALE && !it.isVoided }
+        .filter { it.type == TransactionType.SALE && it.isVoided }
         .sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 }
 
     val qrTotal = transactions
-        .filter { it.type == TransactionType.QR && !it.isVoided }
+        .filter { it.type == TransactionType.QR && it.isVoided }
         .sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 }
 
     val voidTotal = transactions

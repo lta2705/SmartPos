@@ -2,10 +2,12 @@ package com.example.smartpos.ui.theme.screens
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Contactless
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,14 +18,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.smartpos.viewmodel.PaymentState
 import com.example.smartpos.viewmodel.PosViewModel
+import kotlinx.coroutines.delay
 
 @Composable
-fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
+fun PaymentScreen(
+    viewModel: PosViewModel,
+    onCardRead: () -> Unit,
+    onTimeout: () -> Unit
+) {
     val amountStr by viewModel.amount.collectAsState()
     val selectedTip by viewModel.selectedTip.collectAsState()
     val paymentState by viewModel.paymentState.collectAsState()
+    val nfcData by viewModel.nfcData.collectAsState()
+
+    // State để tracking timeout
+    var showTimeoutDialog by remember { mutableStateOf(false) }
+    var timeoutOccurred by remember { mutableStateOf(false) }
 
     // 1. Tính toán tổng tiền (Gốc + Tip)
     val baseAmount = amountStr.toDoubleOrNull() ?: 0.0
@@ -41,22 +54,41 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
         label = "Alpha"
     )
 
-    // 3. Tự động giả lập quẹt thẻ khi vào màn hình này
+    // 3. Gửi transaction started message và bắt đầu quá trình
     LaunchedEffect(Unit) {
-        viewModel.processPayment()
+        // Gửi msgType=2, status=STARTED
+        viewModel.sendTransactionStarted(totalAmount)
+        
+        // Bắt đầu đọc NFC
+        viewModel.startNfcReading()
     }
 
-    // 4. THEO DÕI TRẠNG THÁI: Lưu giao dịch khi thành công
-    LaunchedEffect(paymentState) {
-        if (paymentState is PaymentState.Approved) {
-            // Sửa đổi: Truyền totalAmount vào String.format
-            viewModel.addTransaction(
-                type = com.example.smartpos.viewmodel.TransactionType.SALE,
-                name = "Sale Giao dịch",
-                amount = String.format("%.2f VND", totalAmount)
-            )
-            onPaymentSuccess()
+    // 4. Timeout timer (30 seconds)
+    LaunchedEffect(Unit) {
+        delay(30000) // 30 seconds
+        if (nfcData == null && !timeoutOccurred) {
+            timeoutOccurred = true
+            showTimeoutDialog = true
+            viewModel.onNfcTimeout()
         }
+    }
+
+    // 5. Xử lý khi có NFC data
+    LaunchedEffect(nfcData) {
+        if (nfcData != null && !timeoutOccurred) {
+            onCardRead()
+        }
+    }
+
+    // Timeout Dialog
+    if (showTimeoutDialog) {
+        TimeoutDialog(
+            onDismiss = { showTimeoutDialog = false },
+            onGoHome = {
+                showTimeoutDialog = false
+                onTimeout()
+            }
+        )
     }
 
     Column(
@@ -124,6 +156,84 @@ fun PaymentScreen(viewModel: PosViewModel, onPaymentSuccess: () -> Unit) {
                     color = Color(0xFFC4FB6D),
                     trackColor = Color.DarkGray
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Waiting for card...",
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TimeoutDialog(
+    onDismiss: () -> Unit,
+    onGoHome: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2D2D2D)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Timeout",
+                    tint = Color(0xFFFF6B6B),
+                    modifier = Modifier.size(64.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Transaction Timeout",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "The transaction has timed out. Please try again.",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onGoHome,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF6C5CE7)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "Go to Home",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }

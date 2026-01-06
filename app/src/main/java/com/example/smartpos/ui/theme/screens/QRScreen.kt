@@ -47,13 +47,13 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
                 onClick = onReturn,
                 modifier = Modifier.align(Alignment.CenterStart)
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Return", tint = Color.DarkGray)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Return", tint = Color.White)
             }
 
             Text(
                 text = "QR Payment",
                 fontSize = 20.sp,
-                color = Color.Gray,
+                color = Color.White,
                 fontWeight = FontWeight.Medium
             )
         }

@@ -1,6 +1,7 @@
 package com.example.smartpos.ui.theme.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -45,18 +46,96 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
         composable("tip") {
             TipScreen(
                 viewModel = viewModel,
-                onConfirm = { navController.navigate("payment") }
+                onConfirm = { navController.navigate("processing") }
             )
         }
 
-        // 5. Xử lý thanh toán
+        // 5. Màn hình xử lý TCP connection và chờ response
+        composable("processing") {
+            ProcessingScreen(
+                viewModel = viewModel,
+                onNavigateToSale = {
+                    // SALE -> Payment (not Result directly)
+                    navController.navigate("payment") {
+                        popUpTo("home") { inclusive = false }
+                    }
+                },
+                onNavigateToVoid = {
+                    navController.navigate("void") {
+                        popUpTo("home") { inclusive = false }
+                    }
+                },
+                onNavigateToQr = {
+                    navController.navigate("qr") {
+                        popUpTo("home") { inclusive = false }
+                    }
+                },
+                onNavigateToRefund = {
+                    navController.navigate("refund") {
+                        popUpTo("home") { inclusive = false }
+                    }
+                },
+                onError = { errorMessage ->
+                    // Có thể navigate tới error screen hoặc quay về home
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // 6. Xử lý thanh toán - đọc NFC và chờ
         composable("payment") {
             PaymentScreen(
                 viewModel = viewModel,
-                onPaymentSuccess = {
-                    navController.navigate("result") {
-                        // Xóa các màn hình trung gian để không quay lại được bước thanh toán
-                        popUpTo("home") { inclusive = false }
+                onCardRead = {
+                    // Khi đọc xong NFC, navigate tới card details
+                    navController.navigate("cardDetails")
+                },
+                onTimeout = {
+                    // Timeout -> về home
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // 7. Màn hình hiển thị thông tin thẻ
+        composable("cardDetails") {
+            val cardData = viewModel.getCurrentCardData()
+            if (cardData != null) {
+                CardDetailsScreen(
+                    cardData = cardData,
+                    onSuccess = {
+                        viewModel.onTransactionSuccess()
+                        navController.navigate("result") {
+                            popUpTo("home") { inclusive = false }
+                        }
+                    },
+                    onError = {
+                        viewModel.onTransactionError("Transaction declined")
+                        navController.navigate("error") {
+                            popUpTo("home") { inclusive = false }
+                        }
+                    }
+                )
+            } else {
+                // No card data, go back
+                LaunchedEffect(Unit) {
+                    navController.popBackStack()
+                }
+            }
+        }
+
+        // 8. Màn hình error
+        composable("error") {
+            ErrorScreen(
+                viewModel = viewModel,
+                onClose = {
+                    viewModel.reset()
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
                     }
                 }
             )
@@ -69,7 +148,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             )
         }
 
-        // 6. Màn hình QR Payment
+        // 9. Màn hình QR Payment
         composable("qr") {
             QRScreen(
                 viewModel = viewModel,
@@ -83,7 +162,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             )
         }
 
-        // 7. Màn hình Void (hiển thị giao dịch Sale)
+        // 10. Màn hình Void (hiển thị giao dịch Sale)
         composable("void") {
             VoidScreen(
                 viewModel = viewModel,
@@ -91,7 +170,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             )
         }
 
-        // 8. Màn hình Refund (hiển thị giao dịch QR)
+        // 11. Màn hình Refund (hiển thị giao dịch QR)
         composable("refund") {
             RefundScreen(
                 viewModel = viewModel,
@@ -99,7 +178,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             )
         }
 
-        // 9. Màn hình Settlement
+        // 12. Màn hình Settlement
         composable("settlement") {
             SettlementScreen(
                 viewModel = viewModel,
@@ -107,7 +186,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             )
         }
 
-        // 10. Kết quả giao dịch
+        // 13. Kết quả giao dịch
         composable("result") {
             ResultScreen(
                 viewModel = viewModel,
