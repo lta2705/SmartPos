@@ -48,43 +48,63 @@ class TcpConnectionService {
     val connectionState: StateFlow<TcpConnectionState> = _connectionState.asStateFlow()
 
     /**
-     * Kết nối tới TCP endpoint và giữ sống connection
+     * Kết nối tới TCP endpoint và giữ sống connection với auto-retry
      */
     suspend fun connect() = withContext(Dispatchers.IO) {
-        try {
-            _connectionState.value = TcpConnectionState.Connecting
-            Log.d(TAG, "Connecting to  ${TcpConfig.CURRENT_HOST}:${TcpConfig.CURRENT_PORT}...")
+        var retryCount = 0
+        val maxRetries = Int.MAX_VALUE // Retry vô hạn
+        val retryDelayMs = 5000L // 5 giây giữa mỗi lần retry
 
-            // Tạo socket connection
-            socket = Socket(TcpConfig.CURRENT_HOST, TcpConfig.CURRENT_PORT).apply {
-                soTimeout = TcpConfig.SOCKET_TIMEOUT_MS
-                keepAlive = TcpConfig.KEEP_ALIVE_ENABLED
-                tcpNoDelay = true
+        while (retryCount < maxRetries && !isRunning) {
+            try {
+                _connectionState.value = TcpConnectionState.Connecting
+                if (retryCount > 0) {
+                    Log.d(TAG, "Retry attempt #$retryCount - Connecting to ${TcpConfig.CURRENT_HOST}:${TcpConfig.CURRENT_PORT}...")
+                } else {
+                    Log.d(TAG, "Connecting to ${TcpConfig.CURRENT_HOST}:${TcpConfig.CURRENT_PORT}...")
+                }
+
+                // Tạo socket connection
+                socket = Socket(TcpConfig.CURRENT_HOST, TcpConfig.CURRENT_PORT).apply {
+                    soTimeout = TcpConfig.SOCKET_TIMEOUT_MS
+                    keepAlive = TcpConfig.KEEP_ALIVE_ENABLED
+                    tcpNoDelay = true
+                }
+
+                // Khởi tạo reader và writer
+                reader = BufferedReader(InputStreamReader(socket!!.getInputStream()))
+                writer = PrintWriter(socket!!.getOutputStream(), true)
+
+                _connectionState.value = TcpConnectionState.Connected
+                Log.d(TAG, "Connected successfully!")
+
+                isRunning = true
+
+                // Gửi initial message (msgType = 0)
+                sendInitialMessage()
+
+                // Bắt đầu lắng nghe dữ liệu
+                listenForData()
+                
+                // Nếu connection bị đứt, retry lại
+                if (!isRunning) {
+                    retryCount++
+                    kotlinx.coroutines.delay(retryDelayMs)
+                }
+
+            } catch (e: SocketTimeoutException) {
+                retryCount++
+                Log.e(TAG, "Timeout when connecting (attempt #$retryCount)", e)
+                _connectionState.value = TcpConnectionState.Error("Timeout - Retrying...")
+                disconnect()
+                kotlinx.coroutines.delay(retryDelayMs)
+            } catch (e: Exception) {
+                retryCount++
+                Log.e(TAG, "Failed to connect (attempt #$retryCount): ${e.message}", e)
+                _connectionState.value = TcpConnectionState.Error("Failed - Retrying...")
+                disconnect()
+                kotlinx.coroutines.delay(retryDelayMs)
             }
-
-            // Khởi tạo reader và writer
-            reader = BufferedReader(InputStreamReader(socket!!.getInputStream()))
-            writer = PrintWriter(socket!!.getOutputStream(), true)
-
-            _connectionState.value = TcpConnectionState.Connected
-            Log.d(TAG, "Connected!")
-
-            isRunning = true
-
-            // Gửi initial message (msgType = 0)
-            sendInitialMessage()
-
-            // Bắt đầu lắng nghe dữ liệu
-            listenForData()
-
-        } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "Timeout when connecting", e)
-            _connectionState.value = TcpConnectionState.Error("Timeout when connecting to server")
-            disconnect()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed", e)
-            _connectionState.value = TcpConnectionState.Error("Failed to connect: ${e.message}")
-            disconnect()
         }
     }
 
@@ -120,7 +140,7 @@ class TcpConnectionService {
                     try {
                         val response = parseJsonResponse(line)
                         _connectionState.value = TcpConnectionState.DataReceived(response)
-                        Log.d(TAG, "Parse thành công: TransactionType=${response.transactionType}")
+                        Log.d(TAG, "Parse successfully: TransactionType=${response.transactionType}")
 
                     } catch (e: Exception) {
                         Log.e(TAG, "Lỗi khi parse JSON", e)
@@ -140,7 +160,7 @@ class TcpConnectionService {
             disconnect()
         } catch (e: Exception) {
             Log.e(TAG, "Failed when reading data", e)
-            _connectionState.value = TcpConnectionState.Error("Lỗi khi nhận dữ liệu: ${e.message}")
+            _connectionState.value = TcpConnectionState.Error("Failed when receiving data: ${e.message}")
             disconnect()
         }
     }
@@ -187,11 +207,25 @@ class TcpConnectionService {
             Log.e(TAG, "Lỗi khi gửi transaction message", e)
             _connectionState.value = TcpConnectionState.Error("Lỗi khi gửi message: ${e.message}")
         }
+    }    
+    /**
+     * Gửi transaction tới bank connector server
+     * TODO: Có thể cần tạo socket riêng tới bank connector
+     */
+    suspend fun sendToBankConnector(message: TcpMessage) = withContext(Dispatchers.IO) {
+        try {
+            // TODO: Implement separate connection to bank connector if needed
+            // For now, using same connection
+            val jsonString = message.toJson()
+            writer?.println(jsonString)
+            writer?.flush()
+            Log.d(TAG, "Sent to bank connector: $jsonString")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending to bank connector", e)
+            _connectionState.value = TcpConnectionState.Error("Failed to send to bank: ${e.message}")
+        }
     }
 
-    /**
-     * Get terminal ID
-     */
     fun getTerminalId(): String {
         return terminalConfig.trmId
     }

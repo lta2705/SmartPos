@@ -30,7 +30,6 @@ fun HomeScreen(
     onVoidClick: () -> Unit,
     onSettlementClick: () -> Unit
 ) {
-    // 1. Logic xử lý thời gian thực
     var currentTime by remember { mutableStateOf(LocalDateTime.now()) }
 
     LaunchedEffect(Unit) {

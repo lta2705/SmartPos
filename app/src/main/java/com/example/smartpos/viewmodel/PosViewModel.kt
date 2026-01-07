@@ -2,10 +2,13 @@ package com.example.smartpos.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
+import androidx.navigation.NavController
 import com.example.smartpos.model.CardData
 import com.example.smartpos.model.TcpMessage
 import com.example.smartpos.network.TcpConnectionService
 import com.example.smartpos.network.TcpConnectionState
+import com.example.smartpos.network.TransactionResponse
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,6 +32,13 @@ data class Transaction(
 )
 
 class PosViewModel : ViewModel() {
+    companion object {
+        private const val TAG = "PosViewModel"
+    }
+    
+    // Navigation controller reference
+    private var navController: NavController? = null
+    
     private val _amount = MutableStateFlow("0")
     val amount = _amount.asStateFlow()
 
@@ -187,7 +197,74 @@ class PosViewModel : ViewModel() {
     // ============ TCP Connection Methods ============
     
     /**
-     * Bắt đầu kết nối TCP tới endpoint
+     * Set navigation controller để có thể navigate từ ViewModel
+     */
+    fun setNavController(controller: NavController) {
+        navController = controller
+        startListeningToTcpMessages()
+    }
+    
+    /**
+     * Lắng nghe TCP messages và route theo TransactionType
+     */
+    private fun startListeningToTcpMessages() {
+        viewModelScope.launch {
+            tcpConnectionState.collect { state ->
+                if (state is TcpConnectionState.DataReceived) {
+                    handleIncomingTransaction(state.response)
+                }
+            }
+        }
+    }
+    
+    /**
+     * Xử lý transaction nhận được từ TCP socket
+     */
+    private fun handleIncomingTransaction(response: TransactionResponse) {
+        Log.d(TAG, "Received transaction: ${response.transactionType}")
+        
+        when (response.transactionType.uppercase()) {
+            "SALE" -> {
+                // Reset và set amount từ server
+                response.amount?.let { 
+                    _amount.value = it
+                }
+                
+                // Navigate tới Payment screen
+                navController?.navigate("payment") {
+                    popUpTo("home") { inclusive = false }
+                }
+            }
+            "QR" -> {
+                // Reset và set amount từ server
+                response.amount?.let { 
+                    _amount.value = it
+                }
+                
+                // Navigate tới QR screen
+                navController?.navigate("qr") {
+                    popUpTo("home") { inclusive = false }
+                }
+            }
+            "VOID" -> {
+                navController?.navigate("void") {
+                    popUpTo("home") { inclusive = false }
+                }
+            }
+            "REFUND" -> {
+                navController?.navigate("refund") {
+                    popUpTo("home") { inclusive = false }
+                }
+            }
+            else -> {
+                Log.w(TAG, "Unknown transaction type: ${response.transactionType}")
+            }
+        }
+    }
+    
+    /**
+     * Bắt đầu kết nối TCP tới endpoint với auto-retry
+     * Được gọi 1 lần duy nhất khi app khởi động
      */
     fun startTcpConnection() {
         viewModelScope.launch {
@@ -206,10 +283,11 @@ class PosViewModel : ViewModel() {
     }
 
     /**
-     * Ngắt kết nối TCP
+     * Ngắt kết nối TCP (không nên gọi trừ khi cần thiết)
      */
     fun disconnectTcp() {
-        tcpService.disconnect()
+        // Không disconnect vì cần maintain long-lived connection
+        // tcpService.disconnect()
     }
 
     /**
@@ -340,5 +418,83 @@ class PosViewModel : ViewModel() {
      */
     fun getCurrentCardData(): CardData? {
         return _cardData.value
+    }
+    
+    // ============ Bank Connector Communication Methods ============
+    
+    /**
+     * Gửi transaction tới bank connector server qua TCP
+     */
+    fun sendTransactionToBankConnector(
+        cardData: CardData,
+        onSuccess: (TransactionResponse) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                // Tạo message gửi tới bank connector
+                val totalAmount = getTotalAmount()
+                val transactionId = java.util.UUID.randomUUID().toString()
+                
+                val message = TcpMessage(
+                    msgType = TcpMessage.MSG_TYPE_TRANSACTION,
+                    trmId = tcpService.getTerminalId(),
+                    status = TcpMessage.STATUS_PROCESSING,
+                    amount = String.format("%.2f", totalAmount),
+                    transactionId = transactionId,
+                    cardData = _nfcData.value ?: ""
+                )
+                
+                // Gửi tới bank connector
+                tcpService.sendToBankConnector(message)
+                
+                // Giả lập response từ bank connector (thực tế sẽ nhận từ socket)
+                // TODO: Implement actual listener for bank connector response
+                delay(2000)
+                
+                // Mock response - thực tế sẽ parse từ TCP socket
+                val mockResponse = TransactionResponse(
+                    transactionType = "SALE",
+                    amount = String.format("%.2f", totalAmount),
+                    status = "APPROVED",
+                    message = "Transaction approved",
+                    transactionId = transactionId
+                )
+                
+                onSuccess(mockResponse)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending to bank connector: ${e.message}", e)
+                onError(e.message ?: "Failed to communicate with bank")
+            }
+        }
+    }
+    
+    /**
+     * Gửi QR transaction qua HTTP API tới bank connector
+     */
+    fun sendQRTransactionToBank(
+        amount: Double,
+        onSuccess: (String) -> Unit, // Returns QR code data
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                // TODO: Implement HTTP API call to bank connector
+                // val response = httpClient.post(\"${TcpConfig.BANK_CONNECTOR_HTTP_URL}/qr\") {
+                //     body = QRRequest(amount, terminalId)
+                // }
+                
+                // Giả lập QR response
+                delay(1500)
+                val mockQRCode = "QR_CODE_DATA_${System.currentTimeMillis()}"
+                
+                onSuccess(mockQRCode)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating QR transaction: ${e.message}", e)
+                onError(e.message ?: "Failed to create QR code")
+            }
+        }
     }
 }

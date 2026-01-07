@@ -73,9 +73,11 @@ fun PaymentScreen(
         }
     }
 
-    // 5. Xử lý khi có NFC data
+    // 5. Xử lý khi có NFC data - Gửi STARTED message
     LaunchedEffect(nfcData) {
         if (nfcData != null && !timeoutOccurred) {
+            // Gửi message msgType=2, status=STARTED khi đọc NFC thành công
+            viewModel.sendTransactionStarted(totalAmount)
             onCardRead()
         }
     }

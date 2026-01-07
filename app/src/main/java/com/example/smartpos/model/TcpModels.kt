@@ -10,7 +10,7 @@ import org.json.JSONObject
  * Outgoing TCP Message
  */
 data class TcpMessage(
-    val msgType: Int,
+    val msgType: String,
     val trmId: String? = null,
     val status: String? = null,
     val amount: String? = null,
@@ -30,10 +30,10 @@ data class TcpMessage(
 
     companion object {
         // Message Types
-        const val MSG_TYPE_INIT = 0          // Initial connection
+        const val MSG_TYPE_INIT = "0"          // Initial connection
         const val MSG_TYPE_HEARTBEAT = 1      // Keep-alive
-        const val MSG_TYPE_TRANSACTION = 2    // Transaction message
-        const val MSG_TYPE_RESPONSE = 3       // Response message
+        const val MSG_TYPE_TRANSACTION = "2"    // Transaction message
+        const val MSG_TYPE_RESPONSE = "3"       // Response message
 
         // Transaction Status
         const val STATUS_STARTED = "STARTED"
@@ -180,7 +180,7 @@ data class CardData(
  * Terminal Configuration
  */
 data class TerminalConfig(
-    val trmId: String = "TRM${System.currentTimeMillis()}", // Generate unique terminal ID
+    val trmId: String = "10000176",
     val merchantId: String = "MERCHANT_001",
     val storeId: String = "STORE_001",
     val nfcTimeout: Long = 30000L // 30 seconds

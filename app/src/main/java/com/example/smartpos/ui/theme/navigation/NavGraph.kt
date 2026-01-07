@@ -42,49 +42,19 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
                 })
         }
 
-        // 4. Chọn tiền Tip
+        // 4. Chọn tiền Tip và chuyển thẳng sang Payment
         composable("tip") {
             TipScreen(
                 viewModel = viewModel,
-                onConfirm = { navController.navigate("processing") }
-            )
-        }
-
-        // 5. Màn hình xử lý TCP connection và chờ response
-        composable("processing") {
-            ProcessingScreen(
-                viewModel = viewModel,
-                onNavigateToSale = {
-                    // SALE -> Payment (not Result directly)
+                onConfirm = { 
                     navController.navigate("payment") {
                         popUpTo("home") { inclusive = false }
-                    }
-                },
-                onNavigateToVoid = {
-                    navController.navigate("void") {
-                        popUpTo("home") { inclusive = false }
-                    }
-                },
-                onNavigateToQr = {
-                    navController.navigate("qr") {
-                        popUpTo("home") { inclusive = false }
-                    }
-                },
-                onNavigateToRefund = {
-                    navController.navigate("refund") {
-                        popUpTo("home") { inclusive = false }
-                    }
-                },
-                onError = { errorMessage ->
-                    // Có thể navigate tới error screen hoặc quay về home
-                    navController.navigate("home") {
-                        popUpTo("home") { inclusive = true }
                     }
                 }
             )
         }
 
-        // 6. Xử lý thanh toán - đọc NFC và chờ
+        // 5. Xử lý thanh toán - đọc NFC và chờ
         composable("payment") {
             PaymentScreen(
                 viewModel = viewModel,
@@ -107,6 +77,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
             if (cardData != null) {
                 CardDetailsScreen(
                     cardData = cardData,
+                    viewModel = viewModel,
                     onSuccess = {
                         viewModel.onTransactionSuccess()
                         navController.navigate("result") {

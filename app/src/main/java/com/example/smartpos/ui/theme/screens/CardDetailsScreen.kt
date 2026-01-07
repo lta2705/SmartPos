@@ -8,7 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,13 +19,40 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartpos.model.CardData
+import com.example.smartpos.viewmodel.PosViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun CardDetailsScreen(
     cardData: CardData,
+    viewModel: PosViewModel,
     onSuccess: () -> Unit,
     onError: () -> Unit
 ) {
+    var isProcessing by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    
+    // Xử lý nút Continue - Gửi tới bank connector
+    val handleContinue = {
+        isProcessing = true
+        viewModel.sendTransactionToBankConnector(
+            cardData = cardData,
+            onSuccess = { response ->
+                isProcessing = false
+                if (response.status == "APPROVED" || response.status == "SUCCESS") {
+                    onSuccess()
+                } else {
+                    errorMessage = response.message ?: "Transaction declined"
+                    onError()
+                }
+            },
+            onError = { error ->
+                isProcessing = false
+                errorMessage = error
+                onError()
+            }
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -50,14 +77,26 @@ fun CardDetailsScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
+        // Error message if any
+        if (errorMessage != null) {
+            Text(
+                text = errorMessage!!,
+                color = Color(0xFFFF6B6B),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+
         // Action Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Error Button
+            // Cancel Button
             OutlinedButton(
-                onClick = onError,
+                onClick = { if (!isProcessing) onError() },
+                enabled = !isProcessing,
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp),
@@ -68,15 +107,16 @@ fun CardDetailsScreen(
                 )
             ) {
                 Text(
-                    text = "Decline",
+                    text = "Cancel",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            // Success Button
+            // Continue Button (sends to bank connector)
             Button(
-                onClick = onSuccess,
+                onClick = handleContinue,
+                enabled = !isProcessing,
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp),
@@ -85,12 +125,20 @@ fun CardDetailsScreen(
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(
-                    text = "Approve",
-                    color = Color.Black,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "Continue",
+                        color = Color.Black,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -39,6 +40,16 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 ) {
                     val navController = rememberNavController()
                     sharedViewModel = viewModel()
+                    
+                    // Bắt đầu TCP connection ngay khi app khởi động
+                    LaunchedEffect(Unit) {
+                        sharedViewModel.startTcpConnection()
+                    }
+                    
+                    // Set navigation controller để ViewModel có thể navigate
+                    LaunchedEffect(navController) {
+                        sharedViewModel.setNavController(navController)
+                    }
 
                     PosNavGraph(navController = navController, viewModel = sharedViewModel)
                 }
