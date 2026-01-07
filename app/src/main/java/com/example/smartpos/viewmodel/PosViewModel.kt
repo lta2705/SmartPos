@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import android.util.Log
 import androidx.navigation.NavController
 import com.example.smartpos.model.CardData
+import com.example.smartpos.model.EmvCardData
 import com.example.smartpos.model.TcpMessage
 import com.example.smartpos.network.TcpConnectionService
 import com.example.smartpos.network.TcpConnectionState
@@ -55,11 +56,15 @@ class PosViewModel : ViewModel() {
     private val tcpService = TcpConnectionService()
     val tcpConnectionState: StateFlow<TcpConnectionState> = tcpService.connectionState
 
-    // NFC Data
+    // EMV Data (full)
+    private val _emvCardData = MutableStateFlow<EmvCardData?>(null)
+    val emvCardData = _emvCardData.asStateFlow()
+
+    // NFC Data (legacy - for backward compatibility)
     private val _nfcData = MutableStateFlow<String?>(null)
     val nfcData = _nfcData.asStateFlow()
 
-    // Parsed Card Data
+    // Parsed Card Data (for UI display)
     private val _cardData = MutableStateFlow<CardData?>(null)
     val cardData = _cardData.asStateFlow()
 
@@ -188,6 +193,8 @@ class PosViewModel : ViewModel() {
 
     fun reset() {
         _amount.value = "0"
+        _emvCardData.value = null
+        _isWaitingForNfc.value = false
         _selectedTip.value = 0
         _paymentState.value = PaymentState.Idle
         _nfcData.value = null
@@ -321,35 +328,108 @@ class PosViewModel : ViewModel() {
         }
     }
 
+    // NFC reading state
+    private val _isWaitingForNfc = MutableStateFlow(false)
+    val isWaitingForNfc = _isWaitingForNfc.asStateFlow()
+
     /**
-     * Bắt đầu đọc NFC
+     * Bắt đầu đọc NFC - đợi real NFC tag
      */
     fun startNfcReading() {
         _paymentState.value = PaymentState.Processing
+        _isWaitingForNfc.value = true
         
-        // Giả lập đọc NFC sau 5 giây (thay bằng NFC thực)
-        viewModelScope.launch {
-            delay(5000)
-            
-            // Mock NFC data - format: name|card|expiry|scheme
-            val mockNfcData = "JOHN DOE|**** **** **** 1234|12/25|VISA"
-            simulateNfcRead(mockNfcData)
+        Log.d(TAG, "Started waiting for NFC tag...")
+    }
+    
+    /**
+     * Stop waiting for NFC (khi timeout hoặc cancel)
+     */
+    fun stopNEMV card data từ real NFC tag
+     */
+    fun onEmvCardRead(emvData: EmvCardData) {
+        // Only process if we're waiting for NFC
+        if (!_isWaitingForNfc.value) {
+            Log.w(TAG, "Received EMV data but not in waiting state")
+            return
         }
+        
+        Log.d(TAG, "EMV Card Read: ${emvData.rawTlvData.size} TLV tags")
+        _isWaitingForNfc.value = false
+        _emvCardData.value = emvData
+        
+        // Create CardData for UI display from EMV data
+        val displayCardData = CardData.fromEmvData(emvData)
+        _cardData.value = displayCardData
+        
+        // Set NFC data as JSON for logging
+        _nfcData.value = emvData.toJson()
+        
+        _paymentState.value = PaymentState.Approved
+        Log.d(TAG, "EMV Card parsed successfully: ${displayCardData.cardScheme} - ${displayCardData.maskedCardNumber}")
+    }
+    
+    /**
+     * Xử lý NFC read error
+     */
+    fun onNfcReadError(error: String) {
+        if (!_isWaitingForNfc.value) {
+            return
+        }
+        
+        _isWaitingForNfc.value = false
+        _paymentState.value = PaymentState.Error(error)
+        Log.e(TAG, "NFC Read Error: $error")
+    }
+    
+    /**
+     * Xử lý NFC data từ real NFC tag (legacy - for backward compatibility)
+     */
+    @Deprecated("Use onEmvCardRead instead") _isWaitingForNfc.value = false
+        Log.d(TAG, "Stopped waiting for NFC tag")
     }
 
     /**
-     * Giả lập đọc NFC (thay thế bằng NFC reader thực)
+     * Xử lý NFC data từ real NFC tag
      */
-    fun simulateNfcRead(nfcRawData: String) {
-        _nfcData.value = nfcRawData
+    fun onNfcTagRead(nfcRawData: String) {
+        // Only process if we're waiting for NFC
+        if (!_isWaitingForNfc.value) {
+            emvData = _emvCardData.value
+        val totalAmount = getTotalAmount()
         
-        // Parse card data
-        val parsed = CardData.fromNfcData(nfcRawData)
-        if (parsed != null) {
-            _cardData.value = parsed
-            _paymentState.value = PaymentState.Approved
-        } else {
-            _paymentState.value = PaymentState.Error("Invalid card data")
+        // Lưu transaction vào history
+        addTransaction(
+            type = TransactionType.SALE,
+            name = "Sale - ${card.cardScheme}",
+            amount = String.format("%.2f VND", totalAmount)
+        )
+        
+        // Gửi completed message tới server với EMV data
+        viewModelScope.launch {
+            val message = if (emvData != null) {
+                // Send with full EMV data and Field 55
+                TcpMessage.createTransactionCompleted(
+                    trmId = tcpService.getTerminalId(),
+                    transactionId = java.util.UUID.randomUUID().toString(),
+                    emvCardData = emvData
+                )
+            } else {
+                // Fallback to legacy format
+                @Suppress("DEPRECATION")
+                TcpMessage.createTransactionCompletedLegacy(
+                    trmId = tcpService.getTerminalId(),
+                    transactionId = java.util.UUID.randomUUID().toString(),
+                    cardData = _nfcData.value ?: ""
+                )
+            }
+            
+            tcpService.sendTransactionMessage(message)
+            
+            Log.d(TAG, "Transaction completed message sent")
+            if (emvData != null) {
+                Log.d(TAG, "Field 55: ${emvData.packField55()}")
+            }: $nfcRawData")
         }
     }
 
@@ -357,7 +437,10 @@ class PosViewModel : ViewModel() {
      * Xử lý NFC timeout
      */
     fun onNfcTimeout() {
+        _isWaitingForNfc.value = false
         _paymentState.value = PaymentState.Error("Transaction timeout")
+        
+        Log.d(TAG, "NFC read timeout")
         
         // Gửi timeout message tới server
         viewModelScope.launch {

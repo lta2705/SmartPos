@@ -15,7 +15,9 @@ data class TcpMessage(
     val status: String? = null,
     val amount: String? = null,
     val transactionId: String? = null,
-    val cardData: String? = null
+    val cardData: String? = null,
+    val emvData: JSONObject? = null,      // EMV TLV data
+    val field55: String? = null            // Packed Field 55 for ISO8583
 ) {
     fun toJson(): String {
         val jsonObject = JSONObject()
@@ -25,6 +27,8 @@ data class TcpMessage(
         amount?.let { jsonObject.put("amount", it) }
         transactionId?.let { jsonObject.put("transactionId", it) }
         cardData?.let { jsonObject.put("cardData", it) }
+        emvData?.let { jsonObject.put("emvData", it) }
+        field55?.let { jsonObject.put("field55", it) }
         return jsonObject.toString()
     }
 
@@ -65,9 +69,34 @@ data class TcpMessage(
         }
 
         /**
-         * Create transaction completed message
+         * Create transaction completed message with EMV data
          */
         fun createTransactionCompleted(
+            trmId: String,
+            transactionId: String,
+            emvCardData: EmvCardData
+        ): TcpMessage {
+            // Convert EMV data to JSON
+            val emvJson = JSONObject(emvCardData.toJson())
+            
+            // Pack Field 55
+            val field55 = emvCardData.packField55()
+            
+            return TcpMessage(
+                msgType = MSG_TYPE_TRANSACTION,
+                trmId = trmId,
+                status = STATUS_COMPLETED,
+                transactionId = transactionId,
+                emvData = emvJson,
+                field55 = field55
+            )
+        }
+        
+        /**
+         * Create transaction completed message (legacy - for backward compatibility)
+         */
+        @Deprecated("Use version with EmvCardData instead")
+        fun createTransactionCompletedLegacy(
             trmId: String,
             transactionId: String,
             cardData: String
@@ -96,20 +125,34 @@ data class TcpMessage(
 }
 
 /**
- * Card Data parsed from NFC
- * Format: cardHolderName|maskedCardNumber|expiryDate|cardScheme
+ * Card Data for UI Display (simplified from EMV data)
  */
 data class CardData(
     val cardHolderName: String,
     val maskedCardNumber: String,
     val expiryDate: String,
-    val cardScheme: String
+    val cardScheme: String,
+    val emvData: EmvCardData? = null       // Optional: full EMV data
 ) {
     companion object {
         /**
-         * Parse pipe-delimited NFC data
+         * Create CardData from EMV data
+         */
+        fun fromEmvData(emvData: EmvCardData): CardData {
+            return CardData(
+                cardHolderName = emvData.cardholderName ?: "CARD HOLDER",
+                maskedCardNumber = emvData.getMaskedPan(),
+                expiryDate = emvData.getFormattedExpiry(),
+                cardScheme = emvData.getCardScheme(),
+                emvData = emvData
+            )
+        }
+        
+        /**
+         * Parse pipe-delimited NFC data (legacy support)
          * Example: "JOHN DOE|**** **** **** 1234|12/25|VISA"
          */
+        @Deprecated("Use fromEmvData instead for proper EMV handling")
         fun fromNfcData(nfcData: String): CardData? {
             return try {
                 val parts = nfcData.split("|")
@@ -118,7 +161,8 @@ data class CardData(
                         cardHolderName = parts[0].trim(),
                         maskedCardNumber = parts[1].trim(),
                         expiryDate = parts[2].trim(),
-                        cardScheme = parts[3].trim().uppercase()
+                        cardScheme = parts[3].trim().uppercase(),
+                        emvData = null
                     )
                 } else {
                     null
