@@ -32,7 +32,7 @@ data class TcpMessage(
         // Message Types
         const val MSG_TYPE_INIT = "0"          // Initial connection
         const val MSG_TYPE_HEARTBEAT = 1      // Keep-alive
-        const val MSG_TYPE_TRANSACTION = "2"    // Transaction message
+        const val MSG_TYPE_TRANSACTION = "2"  // Transaction message
         const val MSG_TYPE_RESPONSE = "3"       // Response message
 
         // Transaction Status
