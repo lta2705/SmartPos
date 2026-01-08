@@ -3,6 +3,7 @@ package com.example.smartpos.ui.theme.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -26,7 +27,7 @@ fun NumericKeypad(onKeyClick: (String) -> Unit) {
                         modifier = Modifier.weight(1f).height(70.dp)
                     ) {
                         if (key == "del") {
-                            Icon(Icons.Default.Backspace, contentDescription = "Delete", tint = Color.White)
+                            Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete", tint = Color.White)
                         } else {
                             Text(text = key, fontSize = 26.sp, color = Color.White)
                         }

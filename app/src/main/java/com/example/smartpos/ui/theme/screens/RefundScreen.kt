@@ -1,3 +1,4 @@
+
 package com.example.smartpos.ui.theme.screens
 
 import androidx.compose.foundation.background
@@ -24,7 +25,8 @@ import java.util.*
 
 @Composable
 fun RefundScreen(viewModel: PosViewModel, onBack: () -> Unit) {
-    val qrTransactions by viewModel.qrTransactions.collectAsState()
+    // Provide an explicit initial value for collectAsState
+    val qrTransactions by viewModel.qrTransactions.collectAsState(initial = emptyList<Transaction>())
 
     Column(
         modifier = Modifier
@@ -119,8 +121,9 @@ private fun RefundTransactionCard(transaction: Transaction, onRefund: () -> Unit
                     fontSize = 12.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                // Ensure amount is displayed as String
                 Text(
-                    text = transaction.amount,
+                    text = transaction.amount.toString(),
                     color = Color(0xFFC4FB6D),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold

@@ -63,7 +63,8 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
                     navController.navigate("cardDetails")
                 },
                 onTimeout = {
-                    // Timeout -> về home
+                    // Timeout -> về home và reset
+                    viewModel.reset()
                     navController.navigate("home") {
                         popUpTo("home") { inclusive = true }
                     }

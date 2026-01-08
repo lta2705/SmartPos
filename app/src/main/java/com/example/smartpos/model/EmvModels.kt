@@ -101,6 +101,44 @@ data class EmvCardData(
         }
         
         /**
+         * Create EmvCardData from tag map (from JSON)
+         * Only save specific required tags: 4F, 5A, 5F20, 5F24, 5F30, 82, 9F1A, 9F36, 9F10
+         */
+        fun fromTagMap(tagsMap: Map<String, String>): EmvCardData {
+            // Filter to only keep required tags
+            val allowedTags = setOf(
+                "4F",   // AID
+                "5A",   // PAN
+                "5F20", // Cardholder Name
+                "5F24", // Expiry Date
+                "5F30", // Service Code
+                "82",   // AIP
+                "9F1A", // Terminal Country Code
+                "9F36", // ATC
+                "9F10"  // IAD
+            )
+            
+            val filteredTags = tagsMap.filterKeys { it in allowedTags }
+            
+            return EmvCardData(
+                rawTlvData = filteredTags,
+                pan = filteredTags[EmvTags.TAG_PAN]?.let { bcdToString(hexToBytes(it)) },
+                cardholderName = filteredTags[EmvTags.TAG_CARDHOLDER_NAME]?.let { hexToAscii(it) },
+                expiryDate = filteredTags[EmvTags.TAG_EXPIRY_DATE],
+                panSequence = filteredTags[EmvTags.TAG_PAN_SEQUENCE],
+                aid = filteredTags[EmvTags.TAG_AID],
+                applicationLabel = filteredTags[EmvTags.TAG_APP_LABEL]?.let { hexToAscii(it) },
+                cryptogram = null, // Not saved
+                atc = filteredTags[EmvTags.TAG_APP_TRANSACTION_COUNTER],
+                aip = filteredTags[EmvTags.TAG_APPLICATION_INTERCHANGE_PROFILE],
+                tvr = filteredTags[EmvTags.TAG_TERMINAL_VERIFICATION],
+                tsi = filteredTags[EmvTags.TAG_TSI],
+                cvmResults = filteredTags[EmvTags.TAG_CVM_RESULTS],
+                iad = filteredTags[EmvTags.TAG_ISSUER_APP_DATA]
+            )
+        }
+        
+        /**
          * Parse TLV byte array to Map
          */
         private fun parseTlv(data: ByteArray): Map<String, String> {

@@ -38,9 +38,10 @@ fun PaymentScreen(
     var showTimeoutDialog by remember { mutableStateOf(false) }
     var timeoutOccurred by remember { mutableStateOf(false) }
 
-    // 1. Tính toán tổng tiền (Gốc + Tip)
-    val baseAmount = amountStr.toDoubleOrNull() ?: 0.0
-    val totalAmount = baseAmount + (baseAmount * (selectedTip / 100.0))
+    // 1. Tính toán tổng tiền - sử dụng amount từ TCP nếu có, không tính tip
+    // Amount từ handleIncomingTransaction đã là tổng cuối cùng
+    // Normalize comma to period for parsing
+    val totalAmount = amountStr.replace(",", ".").toDoubleOrNull() ?: 0.0
 
     // 2. Hiệu ứng nhấp nháy cho icon NFC
     val infiniteTransition = rememberInfiniteTransition(label = "NFCAnimation")

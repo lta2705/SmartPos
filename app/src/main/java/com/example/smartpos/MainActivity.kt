@@ -1,10 +1,10 @@
 package com.example.smartpos
 
 import android.content.Intent
+import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.Ndef
-import android.nfc.tech.IsoDep
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -22,6 +22,7 @@ import com.example.smartpos.service.TcpService
 import com.example.smartpos.ui.theme.TouchPayTheme
 import com.example.smartpos.ui.theme.navigation.PosNavGraph
 import com.example.smartpos.viewmodel.PosViewModel
+import org.json.JSONObject
 import java.nio.charset.Charset
 
 class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
@@ -44,15 +45,15 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 ) {
                     val navController = rememberNavController()
                     sharedViewModel = viewModel()
-                    
-                    // Start TCP connection right after composition
-                    LaunchedEffect(Unit) {
-                        sharedViewModel.startTcpConnection()
-                    }
-                    
-                    // Set navigation in Controller
+
+                    // Set navigation in Controller first
                     LaunchedEffect(navController) {
                         sharedViewModel.setNavController(navController)
+                    }
+
+                    // Start TCP connection after ViewModel is initialized
+                    LaunchedEffect(Unit) {
+                        sharedViewModel.startTcpConnection()
                     }
 
                     PosNavGraph(navController = navController, viewModel = sharedViewModel)
@@ -79,8 +80,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             this,
             this,
             NfcAdapter.FLAG_READER_NFC_A or
-                    NfcAdapter.FLAG_READER_NFC_B or
-                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
+                    NfcAdapter.FLAG_READER_NFC_B,
             options
         )
     }
@@ -92,28 +92,27 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onTagDiscovered(tag: Tag?) {
         if (tag == null) return
-        
+
         Log.d("NFC", "Tag discovered: ${tag.techList.joinToString(", ")}")
-        
+
         try {
-            // Read EMV card data
-            val emvData = readEmvCardData(tag)
-            
+            // Read JSON from NDEF
+            val emvData = readJsonFromNdef(tag)
+
             if (emvData != null) {
                 Log.d("NFC", "EMV data read successfully")
                 Log.d("NFC", "PAN: ${emvData.getMaskedPan()}")
                 Log.d("NFC", "Expiry: ${emvData.getFormattedExpiry()}")
                 Log.d("NFC", "Scheme: ${emvData.getCardScheme()}")
-                Log.d("NFC", "EMV JSON: ${emvData.toJson()}")
-                
+
                 // Send to ViewModel
                 runOnUiThread {
                     sharedViewModel.onEmvCardRead(emvData)
                 }
             } else {
-                Log.e("NFC", "Failed to read EMV data from tag")
+                Log.e("NFC", "Failed to read card data from tag")
                 runOnUiThread {
-                    sharedViewModel.onNfcReadError("Could not read EMV data")
+                    sharedViewModel.onNfcReadError("Could not read card data")
                 }
             }
         } catch (e: Exception) {
@@ -123,236 +122,119 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             }
         }
     }
-    
+
     /**
-     * Read EMV card data from NFC tag
+     * Read JSON from NDEF tag
+     * Expected format:
+     * {
+     *   "emvTags": {
+     *     "5A": "4111111111111111",
+     *     "5F20": "4E475559454E20564F2056414E",
+     *     "5F24": "261231",
+     *     ...
+     *   }
+     * }
      */
-    private fun readEmvCardData(tag: Tag): EmvCardData? {
-        // Try IsoDep for EMV contactless cards
-        return readIsoDepEmvCard(tag)
-    }
-    
-    /**
-     * Read EMV card using IsoDep protocol
-     */
-    private fun readIsoDepEmvCard(tag: Tag): EmvCardData? {
-        val isoDep = IsoDep.get(tag) ?: return null
-        
+    private fun readJsonFromNdef(tag: Tag): EmvCardData? {
+        val ndef = Ndef.get(tag) ?: return null
+
         return try {
-            isoDep.connect()
-            isoDep.timeout = 5000 // 5 seconds timeout
-            
-            Log.d("NFC", "IsoDep connected, reading EMV data...")
-            
-            // 1. SELECT PPSE (Proximity Payment System Environment)
-            val ppseResponse = selectPpse(isoDep)
-            if (!isResponseSuccess(ppseResponse)) {
-                Log.e("NFC", "PPSE selection failed")
-                isoDep.close()
+            ndef.connect()
+            val ndefMessage = ndef.cachedNdefMessage ?: ndef.ndefMessage
+
+            if (ndefMessage == null) {
+                Log.e("NFC", "No NDEF message found")
+                ndef.close()
                 return null
             }
-            
-            Log.d("NFC", "PPSE Response: ${bytesToHex(ppseResponse)}")
-            
-            // 2. Parse AID from PPSE response
-            val aid = parseAidFromPpse(ppseResponse)
-            if (aid == null) {
-                Log.e("NFC", "Could not extract AID from PPSE")
-                isoDep.close()
+
+            // Get first record
+            val record = ndefMessage.records.firstOrNull()
+            if (record == null) {
+                Log.e("NFC", "No NDEF records found")
+                ndef.close()
                 return null
             }
+
+            // Read payload and handle NDEF Text Record format
+            // NDEF Text records have format: [status_byte][language_code][text]
+            val payload = record.payload
             
-            Log.d("NFC", "AID found: ${bytesToHex(aid)}")
+            // Check if this is a Text record (TNF=1, Type="T")
+            val isTextRecord = record.tnf.toByte() == 0x01.toByte() &&
+                               String(record.type, Charset.forName("UTF-8")) == "T"
             
-            // 3. SELECT Application by AID
-            val selectAppResponse = selectApplication(isoDep, aid)
-            if (!isResponseSuccess(selectAppResponse)) {
-                Log.e("NFC", "Application selection failed")
-                isoDep.close()
-                return null
+            val jsonString = if (isTextRecord && payload.isNotEmpty()) {
+                // First byte is status byte (encoding + language code length)
+                val statusByte = payload[0].toInt()
+                val languageCodeLength = statusByte and 0x3F // Lower 6 bits = language code length
+                
+                // Skip status byte + language code to get actual text
+                val textStart = 1 + languageCodeLength
+                if (textStart < payload.size) {
+                    String(payload, textStart, payload.size - textStart, Charset.forName("UTF-8"))
+                } else {
+                    String(payload, Charset.forName("UTF-8"))
+                }
+            } else {
+                // Not a Text record, read as-is
+                String(payload, Charset.forName("UTF-8"))
             }
             
-            Log.d("NFC", "Application selected successfully")
+            Log.d("NFC", "JSON from tag: $jsonString")
+
+            // Parse JSON - handle potential double encoding
+            var actualJsonString = jsonString.trim()
             
-            // 4. GET PROCESSING OPTIONS (GPO)
-            val gpoResponse = getProcessingOptions(isoDep)
-            if (!isResponseSuccess(gpoResponse)) {
-                Log.e("NFC", "GPO failed")
-                isoDep.close()
-                return null
+            // Check if the string is double-encoded (starts and ends with quotes)
+            if (actualJsonString.startsWith("\"") && actualJsonString.endsWith("\"")) {
+                // Remove outer quotes and unescape
+                actualJsonString = actualJsonString.substring(1, actualJsonString.length - 1)
+                actualJsonString = actualJsonString.replace("\\\"", "\"")
+                actualJsonString = actualJsonString.replace("\\\\", "\\")
+                Log.d("NFC", "Decoded JSON: $actualJsonString")
             }
             
-            Log.d("NFC", "GPO Response: ${bytesToHex(gpoResponse)}")
+            val jsonObject = JSONObject(actualJsonString)
             
-            // 5. READ RECORD to get card data
-            val cardRecords = readCardRecords(isoDep)
-            
-            isoDep.close()
-            
-            // 6. Combine all EMV data
-            val allEmvData = mutableListOf<Byte>()
-            allEmvData.addAll(selectAppResponse.toList())
-            allEmvData.addAll(gpoResponse.toList())
-            cardRecords.forEach { allEmvData.addAll(it.toList()) }
-            
-            // 7. Parse TLV data
-            val emvCardData = EmvCardData.fromTlvBytes(allEmvData.toByteArray())
-            
-            Log.d("NFC", "EMV parsing complete: ${emvCardData.rawTlvData.size} tags found")
-            
+            // Try to get emvTags - handle both object and string cases
+            val emvTags = if (jsonObject.has("emvTags")) {
+                val emvTagsValue = jsonObject.get("emvTags")
+                when (emvTagsValue) {
+                    is JSONObject -> emvTagsValue
+                    is String -> JSONObject(emvTagsValue)
+                    else -> {
+                        Log.e("NFC", "emvTags is not a JSONObject or String: ${emvTagsValue.javaClass}")
+                        ndef.close()
+                        return null
+                    }
+                }
+            } else {
+                Log.e("NFC", "No emvTags field found in JSON")
+                ndef.close()
+                return null
+            }
+
+            // Convert to Map
+            val tagsMap = mutableMapOf<String, String>()
+            emvTags.keys().forEach { key ->
+                tagsMap[key] = emvTags.getString(key)
+            }
+
+            Log.d("NFC", "Parsed ${tagsMap.size} EMV tags")
+
+            // Create EmvCardData from tags
+            val emvCardData = EmvCardData.fromTagMap(tagsMap)
+
+            ndef.close()
             emvCardData
-            
+
         } catch (e: Exception) {
-            Log.e("NFC", "Error reading IsoDep EMV: ${e.message}", e)
-            try { isoDep.close() } catch (_: Exception) {}
+            Log.e("NFC", "Error reading NDEF JSON: ${e.message}", e)
+            try {
+                ndef.close()
+            } catch (_: Exception) {}
             null
         }
     }
-    
-    /**
-     * SELECT PPSE command
-     */
-    private fun selectPpse(isoDep: IsoDep): ByteArray {
-        val ppse = "2PAY.SYS.DDF01".toByteArray(Charsets.US_ASCII)
-        val command = byteArrayOf(
-            0x00.toByte(), // CLA
-            0xA4.toByte(), // INS (SELECT)
-            0x04.toByte(), // P1
-            0x00.toByte(), // P2
-            ppse.size.toByte() // Lc
-        ) + ppse + byteArrayOf(0x00.toByte()) // Le
-        
-        return isoDep.transceive(command)
-    }
-    
-    /**
-     * SELECT Application by AID
-     */
-    private fun selectApplication(isoDep: IsoDep, aid: ByteArray): ByteArray {
-        val command = byteArrayOf(
-            0x00.toByte(), // CLA
-            0xA4.toByte(), // INS (SELECT)
-            0x04.toByte(), // P1
-            0x00.toByte(), // P2
-            aid.size.toByte() // Lc
-        ) + aid + byteArrayOf(0x00.toByte()) // Le
-        
-        return isoDep.transceive(command)
-    }
-    
-    /**
-     * GET PROCESSING OPTIONS command
-     */
-    private fun getProcessingOptions(isoDep: IsoDep): ByteArray {
-        // PDOL: Tag 83 with default values
-        val pdol = byteArrayOf(
-            0x83.toByte(), 0x00.toByte() // Empty PDOL for simplicity
-        )
-        
-        val command = byteArrayOf(
-            0x80.toByte(), // CLA
-            0xA8.toByte(), // INS (GPO)
-            0x00.toByte(), // P1
-            0x00.toByte(), // P2
-            pdol.size.toByte() // Lc
-        ) + pdol + byteArrayOf(0x00.toByte()) // Le
-        
-        return isoDep.transceive(command)
-    }
-    
-    /**
-     * READ RECORD commands to get card data
-     */
-    private fun readCardRecords(isoDep: IsoDep): List<ByteArray> {
-        val records = mutableListOf<ByteArray>()
-        
-        // Try reading common SFI (Short File Identifier) and records
-        for (sfi in 1..5) {
-            for (record in 1..10) {
-                try {
-                    val command = byteArrayOf(
-                        0x00.toByte(), // CLA
-                        0xB2.toByte(), // INS (READ RECORD)
-                        record.toByte(), // P1 (record number)
-                        ((sfi shl 3) or 0x04).toByte(), // P2 (SFI)
-                        0x00.toByte() // Le
-                    )
-                    
-                    val response = isoDep.transceive(command)
-                    
-                    if (isResponseSuccess(response)) {
-                        Log.d("NFC", "Read SFI $sfi Record $record: ${bytesToHex(response)}")
-                        records.add(response)
-                    } else {
-                        // No more records in this SFI
-                        break
-                    }
-                } catch (e: Exception) {
-                    // Skip failed reads
-                    break
-                }
-            }
-        }
-        
-        return records
-    }
-    
-    /**
-     * Parse AID from PPSE response
-     */
-    private fun parseAidFromPpse(response: ByteArray): ByteArray? {
-        // Look for tag 4F (AID) in response
-        return findTlvTag(response, byteArrayOf(0x4F))
-    }
-    
-    /**
-     * Find TLV tag in data
-     */
-    private fun findTlvTag(data: ByteArray, searchTag: ByteArray): ByteArray? {
-        var index = 0
-        
-        while (index < data.size - 2) {
-            // Check if current position matches search tag
-            var tagMatch = true
-            for (i in searchTag.indices) {
-                if (index + i >= data.size || data[index + i] != searchTag[i]) {
-                    tagMatch = false
-                    break
-                }
-            }
-            
-            if (tagMatch) {
-                // Found tag, parse length and value
-                val lengthIndex = index + searchTag.size
-                if (lengthIndex >= data.size) return null
-                
-                val length = data[lengthIndex].toInt() and 0xFF
-                val valueIndex = lengthIndex + 1
-                
-                if (valueIndex + length <= data.size) {
-                    return data.sliceArray(valueIndex until valueIndex + length)
-                }
-            }
-            
-            index++
-        }
-        
-        return null
-    }
-    
-    /**
-     * Check if APDU response is successful (SW1SW2 = 9000)
-     */
-    private fun isResponseSuccess(response: ByteArray): Boolean {
-        if (response.size < 2) return false
-        val sw1 = response[response.size - 2].toInt() and 0xFF
-        val sw2 = response[response.size - 1].toInt() and 0xFF
-        return sw1 == 0x90 && sw2 == 0x00
-    }
-    
-    /**
-     * Convert bytes to hex string
-     */
-    private fun bytesToHex(bytes: ByteArray): String {
-        return bytes.joinToString("") { "%02X".format(it) }
-    }
+}

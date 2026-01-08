@@ -14,13 +14,18 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.Socket
 import java.net.SocketTimeoutException
+import java.util.Locale
 
 data class TransactionResponse(
     val transactionType: String,
     val amount: String? = null,
     val status: String? = null,
     val message: String? = null,
-    val transactionId: String? = null
+    val transactionId: String? = null,
+    val tipAmt: Double? = null,
+    val currCd: String? = null,
+    val terminalId: String? = null,
+    val pcPosId: String? = null
 )
 
 sealed class TcpConnectionState {
@@ -167,16 +172,68 @@ class TcpConnectionService {
 
     /**
      * Parse JSON response từ server
+     * Handles new format with TotTrAmt, TransactionId, ID, TipAmt, CurrCd, TerminalId fields
      */
     private fun parseJsonResponse(jsonString: String): TransactionResponse {
         val jsonObject = JSONObject(jsonString)
         
+        // Parse amount - support both "amount" and "TotTrAmt" fields
+        val amountStr = when {
+            jsonObject.has("TotTrAmt") -> {
+                val totAmt = jsonObject.getDouble("TotTrAmt")
+                String.format(Locale.US, "%.2f", totAmt)  // Use US locale for period separator
+            }
+            jsonObject.has("amount") -> jsonObject.optString("amount")
+            else -> null
+        }
+        
+        // Parse transaction ID - support both "TransactionId" and "transactionId" and "ID"
+        val txnId = when {
+            jsonObject.has("TransactionId") -> jsonObject.optString("TransactionId")
+            jsonObject.has("transactionId") -> jsonObject.optString("transactionId")
+            jsonObject.has("ID") -> jsonObject.optString("ID")
+            else -> null
+        }
+        
+        // Parse TipAmt
+        val tipAmt = when {
+            jsonObject.has("TipAmt") -> jsonObject.optDouble("TipAmt", 0.0)
+            jsonObject.has("tipAmt") -> jsonObject.optDouble("tipAmt", 0.0)
+            else -> null
+        }
+        
+        // Parse CurrCd (Currency Code)
+        val currCd = when {
+            jsonObject.has("CurrCd") -> jsonObject.optString("CurrCd", "VND")
+            jsonObject.has("currCd") -> jsonObject.optString("currCd", "VND")
+            jsonObject.has("currency") -> jsonObject.optString("currency", "VND")
+            else -> null
+        }
+        
+        // Parse TerminalId
+        val terminalId = when {
+            jsonObject.has("TerminalId") -> jsonObject.optString("TerminalId")
+            jsonObject.has("terminalId") -> jsonObject.optString("terminalId")
+            else -> null
+        }
+        
+        // Parse PcPosId
+        val pcPosId = when {
+            jsonObject.has("PcPosId") -> jsonObject.optString("PcPosId")
+            jsonObject.has("pcPosId") -> jsonObject.optString("pcPosId")
+            else -> null
+        }
+        
         return TransactionResponse(
             transactionType = jsonObject.optString("TransactionType", "UNKNOWN"),
-            amount = jsonObject.optString("amount"),
-            status = jsonObject.optString("status"),
-            message = jsonObject.optString("message"),
-            transactionId = jsonObject.optString("transactionId")
+            amount = amountStr,
+            status = jsonObject.optString("Status"),
+            message = jsonObject.optString("ErrorDetail"),
+            transactionId = txnId,
+            tipAmt = tipAmt,
+            currCd = currCd,
+            terminalId = terminalId,
+            pcPosId = pcPosId
         )
     }
 

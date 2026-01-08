@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartpos.model.CardData
+import com.example.smartpos.network.TransactionResponse
 import com.example.smartpos.viewmodel.PosViewModel
 import kotlinx.coroutines.delay
 

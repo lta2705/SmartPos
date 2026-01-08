@@ -81,14 +81,14 @@ fun ProcessingScreen(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Đang kết nối tới server...",
+                    text = "Connecting to server...",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Vui lòng đợi",
+                    text = "Please wait",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     textAlign = TextAlign.Center
@@ -102,14 +102,14 @@ fun ProcessingScreen(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Đã kết nối!",
+                    text = "Connected!",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF6C5CE7)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Đang chờ phản hồi từ server...",
+                    text = "Waiting for server response...",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     textAlign = TextAlign.Center
@@ -124,7 +124,7 @@ fun ProcessingScreen(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Đã nhận dữ liệu!",
+                    text = "Data received!",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF6C5CE7)
@@ -146,7 +146,7 @@ fun ProcessingScreen(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Lỗi kết nối",
+                    text = "Connection error occurred",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFFFF6B6B)
@@ -164,7 +164,7 @@ fun ProcessingScreen(
                     onClick = { viewModel.retryTcpConnection() },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C5CE7))
                 ) {
-                    Text(text = "Thử lại", color = Color.White)
+                    Text(text = "Retry", color = Color.White)
                 }
             }
         }

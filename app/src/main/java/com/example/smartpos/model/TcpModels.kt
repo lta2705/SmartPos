@@ -17,7 +17,8 @@ data class TcpMessage(
     val transactionId: String? = null,
     val cardData: String? = null,
     val emvData: JSONObject? = null,      // EMV TLV data
-    val field55: String? = null            // Packed Field 55 for ISO8583
+    val field55: String? = null,          // Packed Field 55 for ISO8583
+    val pcPosId: String? = null           // PC POS ID from server
 ) {
     fun toJson(): String {
         val jsonObject = JSONObject()
@@ -29,6 +30,7 @@ data class TcpMessage(
         cardData?.let { jsonObject.put("cardData", it) }
         emvData?.let { jsonObject.put("emvData", it) }
         field55?.let { jsonObject.put("field55", it) }
+        pcPosId?.let { jsonObject.put("pcPosId", it) }
         return jsonObject.toString()
     }
 
@@ -58,13 +60,24 @@ data class TcpMessage(
 
         /**
          * Create transaction started message
+         * @param trmId Terminal ID
+         * @param amount Transaction amount
+         * @param transactionId Transaction ID from server (optional)
+         * @param pcPosId PC POS ID from server (optional)
          */
-        fun createTransactionStarted(trmId: String, amount: String): TcpMessage {
+        fun createTransactionStarted(
+            trmId: String,
+            amount: String,
+            transactionId: String? = null,
+            pcPosId: String? = null
+        ): TcpMessage {
             return TcpMessage(
                 msgType = MSG_TYPE_TRANSACTION,
                 trmId = trmId,
                 status = STATUS_STARTED,
-                amount = amount
+                amount = amount,
+                transactionId = transactionId,
+                pcPosId = pcPosId
             )
         }
 
@@ -224,7 +237,7 @@ data class CardData(
  * Terminal Configuration
  */
 data class TerminalConfig(
-    val trmId: String = "10000176",
+    val trmId: String = "TERM_0001",
     val merchantId: String = "MERCHANT_001",
     val storeId: String = "STORE_001",
     val nfcTimeout: Long = 30000L // 30 seconds
