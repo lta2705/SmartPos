@@ -3,18 +3,24 @@ package com.example.smartpos.network
 import android.util.Log
 import com.example.smartpos.model.TcpMessage
 import com.example.smartpos.model.TerminalConfig
+import com.example.smartpos.utils.AtomicFlag
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.Locale
+import kotlin.math.min
 
 data class TransactionResponse(
     val transactionType: String,
@@ -39,12 +45,24 @@ sealed class TcpConnectionState {
 class TcpConnectionService {
     companion object {
         private const val TAG = "TcpConnectionService"
+        private const val MAX_BACKOFF_MS = 60000L  // Max 60 seconds between retries
+        private const val INITIAL_BACKOFF_MS = 5000L  // Initial 5 seconds
     }
 
+    // Thread-safe state management
+    private val mutex = Mutex()
+    private val isRunning = AtomicFlag(false)
+    private val isBankConnected = AtomicFlag(false)
+    
+    // Socket resources (protected by mutex)
     private var socket: Socket? = null
     private var reader: BufferedReader? = null
     private var writer: PrintWriter? = null
-    private var isRunning = false
+    
+    // Bank Connector separate socket (protected by mutex)
+    private var bankSocket: Socket? = null
+    private var bankWriter: PrintWriter? = null
+    private var bankReader: BufferedReader? = null
     
     // Terminal configuration
     private val terminalConfig = TerminalConfig()
@@ -53,14 +71,17 @@ class TcpConnectionService {
     val connectionState: StateFlow<TcpConnectionState> = _connectionState.asStateFlow()
 
     /**
-     * Kết nối tới TCP endpoint và giữ sống connection với auto-retry
+     * Kết nối tới TCP endpoint với exponential backoff retry
+     * Thread-safe implementation with proper resource management
      */
     suspend fun connect() = withContext(Dispatchers.IO) {
         var retryCount = 0
-        val maxRetries = Int.MAX_VALUE // Retry vô hạn
-        val retryDelayMs = 5000L // 5 giây giữa mỗi lần retry
+        var currentBackoff = INITIAL_BACKOFF_MS
 
-        while (retryCount < maxRetries && !isRunning) {
+        while (!isRunning.value) {
+            // Check for coroutine cancellation
+            ensureActive()
+            
             try {
                 _connectionState.value = TcpConnectionState.Connecting
                 if (retryCount > 0) {
@@ -69,48 +90,78 @@ class TcpConnectionService {
                     Log.d(TAG, "Connecting to ${TcpConfig.CURRENT_HOST}:${TcpConfig.CURRENT_PORT}...")
                 }
 
-                // Tạo socket connection
-                socket = Socket(TcpConfig.CURRENT_HOST, TcpConfig.CURRENT_PORT).apply {
-                    soTimeout = TcpConfig.SOCKET_TIMEOUT_MS
-                    keepAlive = TcpConfig.KEEP_ALIVE_ENABLED
-                    tcpNoDelay = true
-                }
+                // Thread-safe socket creation
+                mutex.withLock {
+                    // Cleanup any existing connection first
+                    closeMainSocketSafely()
+                    
+                    // Create socket with connect timeout
+                    socket = Socket().apply {
+                        connect(
+                            InetSocketAddress(TcpConfig.CURRENT_HOST, TcpConfig.CURRENT_PORT),
+                            TcpConfig.CONNECT_TIMEOUT_MS
+                        )
+                        soTimeout = TcpConfig.SOCKET_TIMEOUT_MS
+                        keepAlive = TcpConfig.KEEP_ALIVE_ENABLED
+                        tcpNoDelay = true
+                    }
 
-                // Khởi tạo reader và writer
-                reader = BufferedReader(InputStreamReader(socket!!.getInputStream()))
-                writer = PrintWriter(socket!!.getOutputStream(), true)
+                    // Initialize reader and writer
+                    reader = BufferedReader(InputStreamReader(socket!!.getInputStream()))
+                    writer = PrintWriter(socket!!.getOutputStream(), true)
+                }
 
                 _connectionState.value = TcpConnectionState.Connected
                 Log.d(TAG, "Connected successfully!")
 
-                isRunning = true
+                isRunning.set(true)
+                currentBackoff = INITIAL_BACKOFF_MS  // Reset backoff on success
 
                 // Gửi initial message (msgType = 0)
                 sendInitialMessage()
+                
+                // Kết nối tới bank connector (non-blocking)
+                connectToBankConnector()
 
                 // Bắt đầu lắng nghe dữ liệu
                 listenForData()
                 
-                // Nếu connection bị đứt, retry lại
-                if (!isRunning) {
+                // If listenForData returns, connection was lost
+                if (!isRunning.value) {
                     retryCount++
-                    kotlinx.coroutines.delay(retryDelayMs)
+                    kotlinx.coroutines.delay(currentBackoff)
+                    currentBackoff = min(currentBackoff * 2, MAX_BACKOFF_MS)  // Exponential backoff
                 }
 
             } catch (e: SocketTimeoutException) {
                 retryCount++
                 Log.e(TAG, "Timeout when connecting (attempt #$retryCount)", e)
-                _connectionState.value = TcpConnectionState.Error("Timeout - Retrying...")
-                disconnect()
-                kotlinx.coroutines.delay(retryDelayMs)
+                _connectionState.value = TcpConnectionState.Error("Timeout - Retrying in ${currentBackoff/1000}s...")
+                closeMainSocketSafely()
+                kotlinx.coroutines.delay(currentBackoff)
+                currentBackoff = min(currentBackoff * 2, MAX_BACKOFF_MS)
             } catch (e: Exception) {
                 retryCount++
                 Log.e(TAG, "Failed to connect (attempt #$retryCount): ${e.message}", e)
-                _connectionState.value = TcpConnectionState.Error("Failed - Retrying...")
-                disconnect()
-                kotlinx.coroutines.delay(retryDelayMs)
+                _connectionState.value = TcpConnectionState.Error("Failed - Retrying in ${currentBackoff/1000}s...")
+                closeMainSocketSafely()
+                kotlinx.coroutines.delay(currentBackoff)
+                currentBackoff = min(currentBackoff * 2, MAX_BACKOFF_MS)
             }
         }
+    }
+    
+    /**
+     * Close main socket resources safely without throwing exceptions
+     */
+    private fun closeMainSocketSafely() {
+        try { reader?.close() } catch (e: Exception) { Log.w(TAG, "Error closing reader: ${e.message}") }
+        try { writer?.close() } catch (e: Exception) { Log.w(TAG, "Error closing writer: ${e.message}") }
+        try { socket?.close() } catch (e: Exception) { Log.w(TAG, "Error closing socket: ${e.message}") }
+        reader = null
+        writer = null
+        socket = null
+        isRunning.set(false)
     }
 
     /**
@@ -121,8 +172,10 @@ class TcpConnectionService {
             val initMessage = TcpMessage.createInitMessage(terminalConfig.trmId)
             val jsonString = initMessage.toJson()
             
-            writer?.println(jsonString)
-            writer?.flush()
+            mutex.withLock {
+                writer?.println(jsonString)
+                writer?.flush()
+            }
             Log.d(TAG, "Send initial msg: $jsonString")
         } catch (e: Exception) {
             Log.e(TAG, "Failed when sending msg", e)
@@ -131,10 +184,14 @@ class TcpConnectionService {
 
     /**
      * Lắng nghe dữ liệu từ server
+     * Thread-safe with cancellation support
      */
     private suspend fun listenForData() = withContext(Dispatchers.IO) {
         try {
-            while (isRunning && socket?.isConnected == true) {
+            while (isRunning.value && socket?.isConnected == true) {
+                // Check for cancellation
+                ensureActive()
+                
                 // Đọc dữ liệu từ server
                 val line = reader?.readLine()
                 
@@ -155,35 +212,36 @@ class TcpConnectionService {
                     // Connection closed by server
                     Log.d(TAG, "Server closed connection")
                     _connectionState.value = TcpConnectionState.Error("Server closed connection")
-                    disconnect()
+                    isRunning.set(false)
                     break
                 }
             }
         } catch (e: SocketTimeoutException) {
             Log.e(TAG, "Timeout while reading data", e)
             _connectionState.value = TcpConnectionState.Error("Timeout while waiting for data")
-            disconnect()
+            isRunning.set(false)
         } catch (e: Exception) {
             Log.e(TAG, "Failed when reading data", e)
             _connectionState.value = TcpConnectionState.Error("Failed when receiving data: ${e.message}")
-            disconnect()
+            isRunning.set(false)
         }
     }
 
     /**
      * Parse JSON response từ server
-     * Handles new format with TotTrAmt, TransactionId, ID, TipAmt, CurrCd, TerminalId fields
+     * Thread-safe, uses optDouble/optString for null safety
      */
     private fun parseJsonResponse(jsonString: String): TransactionResponse {
         val jsonObject = JSONObject(jsonString)
         
         // Parse amount - support both "amount" and "TotTrAmt" fields
+        // Use optDouble with default to prevent JSONException
         val amountStr = when {
             jsonObject.has("TotTrAmt") -> {
-                val totAmt = jsonObject.getDouble("TotTrAmt")
+                val totAmt = jsonObject.optDouble("TotTrAmt", 0.0)
                 String.format(Locale.US, "%.2f", totAmt)  // Use US locale for period separator
             }
-            jsonObject.has("amount") -> jsonObject.optString("amount")
+            jsonObject.has("amount") -> jsonObject.optString("amount", null)
             else -> null
         }
         
@@ -242,8 +300,10 @@ class TcpConnectionService {
      */
     suspend fun sendData(data: String) = withContext(Dispatchers.IO) {
         try {
-            writer?.println(data)
-            writer?.flush()
+            mutex.withLock {
+                writer?.println(data)
+                writer?.flush()
+            }
             Log.d(TAG, "Đã gửi dữ liệu: $data")
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi gửi dữ liệu", e)
@@ -252,34 +312,95 @@ class TcpConnectionService {
     }
 
     /**
-     * Gửi transaction message
+     * Gửi transaction message (thread-safe)
      */
     suspend fun sendTransactionMessage(message: TcpMessage) = withContext(Dispatchers.IO) {
         try {
             val jsonString = message.toJson()
-            writer?.println(jsonString)
-            writer?.flush()
-            Log.d(TAG, "Đã gửi transaction message: $jsonString")
+            mutex.withLock {
+                writer?.println(jsonString)
+                writer?.flush()
+            }
+            Log.d(TAG, "Transaction sent: $jsonString")
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khi gửi transaction message", e)
+            Log.e(TAG, "Failed when sending transaction", e)
             _connectionState.value = TcpConnectionState.Error("Lỗi khi gửi message: ${e.message}")
         }
-    }    
+    }
+    
     /**
-     * Gửi transaction tới bank connector server
-     * TODO: Có thể cần tạo socket riêng tới bank connector
+     * Close bank connector resources safely
+     */
+    private fun closeBankConnectorSafely() {
+        try { bankReader?.close() } catch (e: Exception) { Log.w(TAG, "Error closing bank reader: ${e.message}") }
+        try { bankWriter?.close() } catch (e: Exception) { Log.w(TAG, "Error closing bank writer: ${e.message}") }
+        try { bankSocket?.close() } catch (e: Exception) { Log.w(TAG, "Error closing bank socket: ${e.message}") }
+        bankReader = null
+        bankWriter = null
+        bankSocket = null
+        isBankConnected.set(false)
+    }
+    
+    /**
+     * Kết nối tới bank connector server
+     * Thread-safe với proper resource cleanup
+     */
+    private suspend fun connectToBankConnector() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                Log.d(TAG, "Connecting to bank connector at ${TcpConfig.BANK_CONNECTOR_HOST}:${TcpConfig.BANK_CONNECTOR_PORT}...")
+                
+                // Cleanup existing connection first
+                closeBankConnectorSafely()
+                
+                bankSocket = Socket().apply {
+                    connect(
+                        InetSocketAddress(TcpConfig.BANK_CONNECTOR_HOST, TcpConfig.BANK_CONNECTOR_PORT),
+                        TcpConfig.CONNECT_TIMEOUT_MS
+                    )
+                    soTimeout = TcpConfig.SOCKET_TIMEOUT_MS
+                    keepAlive = TcpConfig.KEEP_ALIVE_ENABLED
+                    tcpNoDelay = true
+                }
+                
+                bankWriter = PrintWriter(bankSocket!!.getOutputStream(), true)
+                bankReader = BufferedReader(InputStreamReader(bankSocket!!.getInputStream()))
+                isBankConnected.set(true)
+                
+                Log.d(TAG, "Bank connector connected successfully!")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to connect to bank connector: ${e.message}", e)
+                closeBankConnectorSafely()
+            }
+        }
+    }
+    
+    /**
+     * Send message to bank connector (thread-safe with auto-reconnect)
      */
     suspend fun sendToBankConnector(message: TcpMessage) = withContext(Dispatchers.IO) {
-        try {
-            // TODO: Implement separate connection to bank connector if needed
-            // For now, using same connection
-            val jsonString = message.toJson()
-            writer?.println(jsonString)
-            writer?.flush()
-            Log.d(TAG, "Sent to bank connector: $jsonString")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sending to bank connector", e)
-            _connectionState.value = TcpConnectionState.Error("Failed to send to bank: ${e.message}")
+        // Try to reconnect if not connected (outside of mutex to avoid deadlock)
+        if (!isBankConnected.value || bankSocket?.isConnected != true) {
+            Log.w(TAG, "Bank connector not connected, attempting to reconnect...")
+            connectToBankConnector()
+        }
+        
+        mutex.withLock {
+            try {
+                if (isBankConnected.value && bankWriter != null) {
+                    val jsonString = message.toJson()
+                    bankWriter?.println(jsonString)
+                    bankWriter?.flush()
+                    Log.d(TAG, "Sent to bank connector: $jsonString")
+                } else {
+                    Log.e(TAG, "Unable to send to bank connector - connection not available")
+                    _connectionState.value = TcpConnectionState.Error("Bank connector unavailable")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending to bank connector", e)
+                isBankConnected.set(false)
+                _connectionState.value = TcpConnectionState.Error("Failed to send to bank: ${e.message}")
+            }
         }
     }
 
@@ -295,12 +416,14 @@ class TcpConnectionService {
     }
 
     /**
-     * Gửi keep-alive message để giữ connection
+     * Gửi keep-alive message để giữ connection (thread-safe)
      */
     suspend fun sendKeepAlive() = withContext(Dispatchers.IO) {
         try {
-            writer?.println("{\"type\":\"keepalive\"}")
-            writer?.flush()
+            mutex.withLock {
+                writer?.println("{\"type\":\"keepalive\"}")
+                writer?.flush()
+            }
             Log.d(TAG, "Đã gửi keep-alive")
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi gửi keep-alive", e)
@@ -308,22 +431,13 @@ class TcpConnectionService {
     }
 
     /**
-     * Đóng connection
+     * Đóng tất cả connections (thread-safe)
      */
     fun disconnect() {
-        try {
-            isRunning = false
-            reader?.close()
-            writer?.close()
-            socket?.close()
-            Log.d(TAG, "Đã đóng connection")
-        } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khi đóng connection", e)
-        } finally {
-            socket = null
-            reader = null
-            writer = null
-        }
+        isRunning.set(false)
+        closeMainSocketSafely()
+        closeBankConnectorSafely()
+        Log.d(TAG, "Đã đóng tất cả connections")
     }
 
     /**
@@ -332,4 +446,14 @@ class TcpConnectionService {
     fun resetState() {
         _connectionState.value = TcpConnectionState.Idle
     }
+    
+    /**
+     * Check if connected to main server
+     */
+    fun isConnected(): Boolean = isRunning.value && socket?.isConnected == true
+    
+    /**
+     * Check if connected to bank connector
+     */
+    fun isBankConnectorConnected(): Boolean = isBankConnected.value && bankSocket?.isConnected == true
 }

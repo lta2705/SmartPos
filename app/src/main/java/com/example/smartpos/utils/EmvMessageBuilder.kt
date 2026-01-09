@@ -83,31 +83,30 @@ object EmvMessageBuilder {
         emvJson.put("de55Length", de55Hex.length / 2)
         
         // Add parsed fields for reference
-        val parsedJson = JSONObject()
-        parsedJson.put("pan", emvData.pan ?: "")
-        parsedJson.put("cardholderName", emvData.cardholderName ?: "")
-        parsedJson.put("expiryDate", emvData.expiryDate ?: "")
-        parsedJson.put("amount", totTrAmt)
-        parsedJson.put("tipAmount", tipAmt)
-        parsedJson.put("currency", currCd)
-        parsedJson.put("transactionType", transactionType)
-        parsedJson.put("terminalId", terminalId)
-        parsedJson.put("transactionDate", transactionDate)
-        parsedJson.put("transactionTime", transactionTime)
-        parsedJson.put("aid", emvData.aid ?: "")
-        parsedJson.put("atc", emvData.atc ?: "")
-        
-        emvJson.put("parsed", parsedJson)
-        
-        // Add individual tags for reference
+//        val parsedJson = JSONObject()
+//        parsedJson.put("pan", emvData.pan ?: "")
+//        parsedJson.put("cardholderName", emvData.cardholderName ?: "")
+//        parsedJson.put("expiryDate", emvData.expiryDate ?: "")
+//        parsedJson.put("amount", totTrAmt)
+//        parsedJson.put("tipAmount", tipAmt)
+//        parsedJson.put("currency", currCd)
+//        parsedJson.put("transactionType", transactionType)
+//        parsedJson.put("terminalId", terminalId)
+//        parsedJson.put("transactionDate", transactionDate)
+//        parsedJson.put("transactionTime", transactionTime)
+//        parsedJson.put("aid", emvData.aid ?: "")
+//        parsedJson.put("atc", emvData.atc ?: "")
+//
+//        emvJson.put("parsed", parsedJson)
+
         val tagsJson = JSONObject()
         completeTags.forEach { (tag, value) ->
             tagsJson.put(tag, value)
         }
-        emvJson.put("tags", tagsJson)
-        
+//        emvJson.put("tags", tagsJson)
+
         json.put("emvData", emvJson)
-        
+//
         return json.toString()
     }
     

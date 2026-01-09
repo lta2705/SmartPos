@@ -37,7 +37,6 @@ fun CardDetailsScreen(
     val handleContinue = {
         isProcessing = true
         viewModel.sendTransactionToBankConnector(
-            cardData = cardData,
             onSuccess = { response ->
                 isProcessing = false
                 if (response.status == "APPROVED" || response.status == "SUCCESS") {

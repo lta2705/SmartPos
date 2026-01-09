@@ -11,6 +11,7 @@ import org.json.JSONObject
  */
 data class TcpMessage(
     val msgType: String,
+    val transactionType: String? = null,
     val trmId: String? = null,
     val status: String? = null,
     val amount: String? = null,

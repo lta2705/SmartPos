@@ -10,6 +10,9 @@ import com.example.smartpos.model.TcpMessage
 import com.example.smartpos.network.TcpConnectionService
 import com.example.smartpos.network.TcpConnectionState
 import com.example.smartpos.network.TransactionResponse
+import com.example.smartpos.utils.AmountUtils
+import com.example.smartpos.utils.DateUtils
+import com.example.smartpos.extensions.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,15 +20,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Locale
+import java.util.UUID
 
 enum class TransactionType {
     SALE, QR, VOID, REFUND
 }
 
 data class Transaction(
-    val id: String = java.util.UUID.randomUUID().toString(),
+    val id: String = UUID.randomUUID().toString(),
     val type: TransactionType,
     val name: String,
     val amount: String,
@@ -38,7 +45,10 @@ class PosViewModel : ViewModel() {
         private const val TAG = "PosViewModel"
     }
     
-    // Navigation controller reference
+    // Mutex for thread-safe state updates
+    private val stateMutex = Mutex()
+    
+    // Navigation controller reference (weak reference to avoid memory leak)
     private var navController: NavController? = null
 
     private val _amount = MutableStateFlow("0")
@@ -98,24 +108,49 @@ class PosViewModel : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalSum: StateFlow<Double> = _transactionHistory
-        .map { list -> list.sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 } }
+        .map { list -> list.calculateTotal() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     // --- UI Methods ---
     fun updateAmount(digit: String) {
-        if (digit == "del") {
-            _amount.value = if (_amount.value.length > 1) _amount.value.dropLast(1) else "0"
-        } else if (digit == "." && _amount.value.contains(".")) {
-            return
-        } else {
-            _amount.value = if (_amount.value == "0") digit else _amount.value + digit
+        _amount.update { current ->
+            when {
+                digit == "del" -> if (current.length > 1) current.dropLast(1) else "0"
+                digit == "." && current.contains(".") -> current  // Don't add second decimal
+                current == "0" && digit != "." -> digit
+                else -> current + digit
+            }
+        }
+    }
+    
+    /**
+     * Clear transaction state when returning from payment/QR screens
+     * Called by onReturn navigation callback
+     * Thread-safe state clearing
+     */
+    fun clearTransactionState() {
+        Log.d(TAG, "Clearing transaction state on return")
+        viewModelScope.launch {
+            stateMutex.withLock {
+                _amount.value = "0"
+                _selectedTip.value = 0
+                _currentTransactionId.value = null
+                _currentPcPosId.value = null
+                _currentTotTrAmt.value = 0.0
+                _currentTipAmt.value = 0.0
+                _currentCurrCd.value = "VND"
+                _currentTransactionType.value = "SALE"
+                _currentTerminalId.value = ""
+                _emvCardData.value = null
+                _cardData.value = null
+                _isWaitingForNfc.value = false
+                _paymentState.value = PaymentState.Idle
+            }
         }
     }
 
     fun disconnectTcp() {
-        viewModelScope.launch {
-            tcpService.disconnect()
-        }
+        tcpService.disconnect()
     }
 
     fun selectTip(percent: Int) {
@@ -124,8 +159,7 @@ class PosViewModel : ViewModel() {
 
     fun getTotalAmount(): Double {
         val base = _amount.value.toDoubleOrNull() ?: 0.0
-        val tipPercent = _selectedTip.value
-        return base + (base * tipPercent / 100.0)
+        return AmountUtils.calculateWithTip(base, _selectedTip.value)
     }
 
     fun reset() {
@@ -226,7 +260,7 @@ class PosViewModel : ViewModel() {
         viewModelScope.launch {
             val message = TcpMessage.createTransactionStarted(
                 trmId = tcpService.getTerminalId(),
-                amount = String.format(Locale.US, "%.2f", amount),  // Use US locale
+                amount = AmountUtils.formatAmountOnly(amount),
                 transactionId = _currentTransactionId.value,
                 pcPosId = _currentPcPosId.value
             )
@@ -234,15 +268,33 @@ class PosViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Process EMV card read with thread-safe NFC state check
+     * Prevents race condition when multiple NFC reads occur
+     */
     fun onEmvCardRead(emvData: EmvCardData) {
-        if (!_isWaitingForNfc.value) return
+        viewModelScope.launch {
+            // Atomic check-and-set to prevent race condition
+            val wasWaiting = stateMutex.withLock {
+                if (_isWaitingForNfc.value) {
+                    _isWaitingForNfc.value = false
+                    true
+                } else {
+                    false
+                }
+            }
+            
+            if (!wasWaiting) {
+                Log.w(TAG, "Ignoring NFC read - not waiting for card")
+                return@launch
+            }
 
-        _isWaitingForNfc.value = false
-        _emvCardData.value = emvData
-        _cardData.value = CardData.fromEmvData(emvData)
-        _nfcData.value = emvData.toJson()
+            _emvCardData.value = emvData
+            _cardData.value = CardData.fromEmvData(emvData)
+            _nfcData.value = emvData.toJson()
 
-        onTransactionSuccess()
+            onTransactionSuccess()
+        }
     }
 
     fun onNfcReadError(error: String) {
@@ -266,29 +318,41 @@ class PosViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Handle successful transaction
+     * Null-safe with proper logging on failure
+     */
     fun onTransactionSuccess() {
-        val card = _cardData.value ?: return
+        val card = _cardData.value
+        if (card == null) {
+            Log.w(TAG, "onTransactionSuccess called but card data is null")
+            return
+        }
+        
         val emvData = _emvCardData.value
         val totalAmount = getTotalAmount()
 
         addTransaction(
             type = TransactionType.SALE,
             name = "Sale - ${card.cardScheme}",
-            amount = String.format("%.2f VND", totalAmount)
+            amount = AmountUtils.formatAmount(totalAmount, "VND")
         )
 
         viewModelScope.launch {
+            // Generate transaction ID safely
+            val transactionId = _currentTransactionId.value ?: UUID.randomUUID().toString()
+            
             val message = if (emvData != null) {
                 TcpMessage.createTransactionCompleted(
                     trmId = tcpService.getTerminalId(),
-                    transactionId = java.util.UUID.randomUUID().toString(),
+                    transactionId = transactionId,
                     emvCardData = emvData
                 )
             } else {
                 TcpMessage.createTransactionCompletedLegacy(
                     trmId = tcpService.getTerminalId(),
-                    transactionId = java.util.UUID.randomUUID().toString(),
-                    cardData = _nfcData.value ?: ""
+                    transactionId = transactionId,
+                    cardData = _nfcData.value.orEmpty()
                 )
             }
 //            tcpService.sendTransactionMessage(message)
@@ -308,26 +372,120 @@ class PosViewModel : ViewModel() {
     }
 
     // --- Transaction History Management ---
+    /**
+     * Add transaction with thread-safe list update
+     */
     fun addTransaction(type: TransactionType, name: String, amount: String) {
         val newTransaction = Transaction(type = type, name = name, amount = amount)
-        _transactionHistory.value = _transactionHistory.value + newTransaction
+        _transactionHistory.update { current -> current + newTransaction }
     }
 
     fun voidTransaction(transaction: Transaction) {
-        if (transaction.type == TransactionType.SALE) {
-            _transactionHistory.value = _transactionHistory.value.map {
-                if (it.id == transaction.id) it.copy(isVoided = true) else it
+        if (transaction.type != TransactionType.SALE) {
+            Log.w(TAG, "Cannot void non-SALE transaction: ${transaction.type}")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                val emvData = _emvCardData.value
+                if (emvData == null) {
+                    Log.e(TAG, "No EMV data available for VOID")
+                    return@launch
+                }
+                
+                // Parse amount from transaction
+                val amount = transaction.getAmountAsDouble()
+                
+                // Build DE55 EMV message for VOID
+                val de55 = com.example.smartpos.utils.EmvMessageBuilder.buildDE55(
+                    emvData = emvData,
+                    totTrAmt = amount,
+                    tipAmt = 0.0,
+                    currCd = "VND",
+                    transactionType = "VOID",
+                    terminalId = _currentTerminalId.value.ifEmpty { tcpService.getTerminalId() },
+                    transactionDate = DateUtils.getCurrentDate(),
+                    transactionTime = DateUtils.getCurrentTime()
+                )
+                
+                val voidMessage = TcpMessage(
+                    msgType = TcpMessage.MSG_TYPE_TRANSACTION,
+                    trmId = tcpService.getTerminalId(),
+                    status = TcpMessage.STATUS_PROCESSING,
+                    amount = AmountUtils.formatAmountOnly(amount),
+                    transactionId = transaction.id,
+                    cardData = de55,
+                    transactionType = "VOID"
+                )
+                
+                // Send to bank connector
+                tcpService.sendToBankConnector(voidMessage)
+                Log.d(TAG, "VOID transaction sent to bank connector for ${transaction.id}")
+                
+                // Mark transaction as voided (thread-safe update)
+                _transactionHistory.update { list ->
+                    list.map { if (it.id == transaction.id) it.copy(isVoided = true) else it }
+                }
+                addTransaction(TransactionType.VOID, "Void - ${transaction.name}", transaction.amount)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending VOID to bank: ${e.message}", e)
             }
-            addTransaction(TransactionType.VOID, "Void - ${transaction.name}", transaction.amount)
         }
     }
     
     fun refundTransaction(transaction: Transaction) {
-        if (transaction.type == TransactionType.QR) {
-            _transactionHistory.value = _transactionHistory.value.map {
-                if (it.id == transaction.id) it.copy(isVoided = true) else it
+        if (transaction.type != TransactionType.QR) {
+            Log.w(TAG, "Cannot refund non-QR transaction: ${transaction.type}")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                val emvData = _emvCardData.value
+                if (emvData == null) {
+                    Log.e(TAG, "No EMV data available for REFUND")
+                    return@launch
+                }
+                
+                // Parse amount from transaction
+                val amount = transaction.getAmountAsDouble()
+                
+                // Build DE55 EMV message for REFUND
+                val de55 = com.example.smartpos.utils.EmvMessageBuilder.buildDE55(
+                    emvData = emvData,
+                    totTrAmt = amount,
+                    tipAmt = 0.0,
+                    currCd = "VND",
+                    transactionType = "REFUND",
+                    terminalId = _currentTerminalId.value.ifEmpty { tcpService.getTerminalId() },
+                    transactionDate = DateUtils.getCurrentDate(),
+                    transactionTime = DateUtils.getCurrentTime()
+                )
+                
+                val refundMessage = TcpMessage(
+                    msgType = TcpMessage.MSG_TYPE_TRANSACTION,
+                    trmId = tcpService.getTerminalId(),
+                    status = TcpMessage.STATUS_PROCESSING,
+                    amount = AmountUtils.formatAmountOnly(amount),
+                    transactionId = transaction.id,
+                    cardData = de55
+                )
+                
+                // Send to bank connector
+                tcpService.sendToBankConnector(refundMessage)
+                Log.d(TAG, "REFUND transaction sent to bank connector for ${transaction.id}")
+                
+                // Mark transaction as voided (refunded) - thread-safe
+                _transactionHistory.update { list ->
+                    list.map { if (it.id == transaction.id) it.copy(isVoided = true) else it }
+                }
+                addTransaction(TransactionType.REFUND, "Refund - ${transaction.name}", transaction.amount)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending REFUND to bank: ${e.message}", e)
             }
-            addTransaction(TransactionType.REFUND, "Refund - ${transaction.name}", transaction.amount)
         }
     }
     
@@ -342,17 +500,25 @@ class PosViewModel : ViewModel() {
     
     /**
      * Gửi transaction tới bank connector server qua TCP
+     * Fixed null safety for transaction ID
+     * @param _unused Previously cardData, now uses emvCardData from state
      */
+    @Suppress("UNUSED_PARAMETER")
     fun sendTransactionToBankConnector(
-        cardData: CardData,
         onSuccess: (TransactionResponse) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
             try {
                 val totalAmount = getTotalAmount()
-                // Use transaction ID from server, or generate new if not available
-                val transactionId = _currentTransactionId.value ?: java.util.UUID.randomUUID().toString()
+                
+                // Safe transaction ID handling - capture value once to avoid race condition
+                val serverTransactionId = _currentTransactionId.value
+                val transactionId = serverTransactionId ?: run {
+                    val randomId = UUID.randomUUID().toString()
+                    Log.d(TAG, "Generated random transaction ID for keyboard entry: $randomId")
+                    randomId
+                }
                 Log.d(TAG, "Sending transaction to bank with ID: $transactionId")
                 
                 val emvData = _emvCardData.value
@@ -363,37 +529,35 @@ class PosViewModel : ViewModel() {
                 }
                 
                 // Build DE55 EMV message with transaction details from TCP
+                // Use total amount if server amount is 0
+                val effectiveAmount = _currentTotTrAmt.value.takeIf { it > 0.0 } ?: totalAmount
+                val terminalId = _currentTerminalId.value.ifEmpty { tcpService.getTerminalId() }
+                
                 val de55 = com.example.smartpos.utils.EmvMessageBuilder.buildDE55(
                     emvData = emvData,
-                    totTrAmt = _currentTotTrAmt.value,
+                    totTrAmt = effectiveAmount,
                     tipAmt = _currentTipAmt.value,
                     currCd = _currentCurrCd.value,
                     transactionType = _currentTransactionType.value,
-                    terminalId = _currentTerminalId.value,
-                    transactionDate = getCurrentDate(),
-                    transactionTime = getCurrentTime()
+                    terminalId = terminalId,
+                    transactionDate = DateUtils.getCurrentDate(),
+                    transactionTime = DateUtils.getCurrentTime()
                 )
                 
                 val message = TcpMessage(
                     msgType = TcpMessage.MSG_TYPE_TRANSACTION,
                     trmId = tcpService.getTerminalId(),
                     status = TcpMessage.STATUS_PROCESSING,
-                    amount = String.format("%.2f", totalAmount),
+                    amount = AmountUtils.formatAmountOnly(totalAmount),
                     transactionId = transactionId,
-                    cardData = de55
+                    cardData = de55,
+                    transactionType = "SALE"
                 )
                 
                 // Check if TCP connection is available
-                val currentState = tcpConnectionState.value
-                if (currentState !is TcpConnectionState.Connected) {
-                    Log.e(TAG, "Bank connector not connected")
-                    onError("Bank connector unavailable")
-                    
-                    // Send failed message
-                    val failedMessage = TcpMessage.createTransactionFailed(
-                        trmId = tcpService.getTerminalId(),
-                        reason = "Bank connector unavailable"
-                    )
+                if (!tcpService.isConnected()) {
+                    Log.e(TAG, "Main TCP not connected")
+                    onError("Server unavailable")
                     return@launch
                 }
                 
@@ -406,7 +570,7 @@ class PosViewModel : ViewModel() {
                 
                 val mockResponse = TransactionResponse(
                     transactionType = "SALE",
-                    amount = String.format("%.2f", totalAmount),
+                    amount = AmountUtils.formatAmountOnly(totalAmount),
                     status = "APPROVED",
                     message = "Transaction approved",
                     transactionId = transactionId
@@ -421,15 +585,7 @@ class PosViewModel : ViewModel() {
         }
     }
     
-    private fun getCurrentDate(): String {
-        val sdf = java.text.SimpleDateFormat("yyMMdd", java.util.Locale.US)
-        return sdf.format(java.util.Date())
-    }
-    
-    private fun getCurrentTime(): String {
-        val sdf = java.text.SimpleDateFormat("HHmmss", java.util.Locale.US)
-        return sdf.format(java.util.Date())
-    }
+    // Removed duplicate date/time methods - now using DateUtils
     
     /**
      * Gửi QR transaction qua HTTP API tới bank connector

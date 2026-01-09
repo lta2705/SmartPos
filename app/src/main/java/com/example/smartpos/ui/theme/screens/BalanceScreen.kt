@@ -22,7 +22,7 @@ import com.example.smartpos.viewmodel.Transaction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BalanceScreen(viewModel: PosViewModel, onBack: () -> Unit) {
+fun BalanceScreen(viewModel: PosViewModel, onBack: () -> Unit, onPrintBalance: () -> Unit) {
     val transactions by viewModel.transactionHistory.collectAsState()
     val totalSum by viewModel.totalSum.collectAsState()
 
@@ -48,7 +48,7 @@ fun BalanceScreen(viewModel: PosViewModel, onBack: () -> Unit) {
         bottomBar = {
             // Nút Print Current Balance
             Button(
-                onClick = { /* Logic in hóa đơn có thể thêm vào ViewModel */ },
+                onClick = onPrintBalance,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
@@ -159,11 +159,19 @@ fun TransactionItem(transaction: Transaction) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = transaction.name,
-                color = Color.White,
-                fontSize = 16.sp
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transaction.name,
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "ID: ${transaction.id.take(8)}",
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+            }
             Text(
                 text = transaction.amount,
                 color = Color.White,

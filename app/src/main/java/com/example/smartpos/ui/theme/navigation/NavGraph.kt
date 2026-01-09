@@ -38,6 +38,7 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
                 navController.navigate("tip")
             },
                 onReturn ={
+                    viewModel.clearTransactionState()
                     navController.navigate("home")
                 })
         }
@@ -116,7 +117,8 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
         composable("balance") {
             BalanceScreen(
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onPrintBalance = { navController.navigate("balanceReceipt") }
             )
         }
 
@@ -130,7 +132,10 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
                         popUpTo("home") { inclusive = true }
                     }
                 },
-                onReturn = { navController.navigate("home") }
+                onReturn = { 
+                    viewModel.clearTransactionState()
+                    navController.navigate("home") 
+                }
             )
         }
 
@@ -167,6 +172,18 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
                     navController.navigate("home") {
                         popUpTo("home") { inclusive = true }
                     }
+                }
+            )
+        }
+        
+        // 14. Balance Receipt Screen
+        composable("balanceReceipt") {
+            BalanceReceiptScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onPrint = {
+                    // TODO: Implement actual printer integration
+                    android.util.Log.d("Receipt", "Print balance report requested")
                 }
             )
         }
