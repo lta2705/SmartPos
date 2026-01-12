@@ -1,20 +1,31 @@
 package com.example.smartpos.model
 
+import com.example.smartpos.viewmodel.TransactionType
 import org.json.JSONObject
+import java.math.BigDecimal
 
 /**
  * TCP Message Models
  */
+
+enum class TransactionType {
+    SALE,
+    VOID,
+    REFUND,
+    QR,
+    REVERSAL,
+    SETTLEMENT
+}
 
 /**
  * Outgoing TCP Message
  */
 data class TcpMessage(
     val msgType: String,
-    val transactionType: String? = null,
+    val transactionType: TransactionType? = null,
     val trmId: String? = null,
     val status: String? = null,
-    val amount: String? = null,
+    val amount: BigDecimal? = null,
     val transactionId: String? = null,
     val cardData: String? = null,
     val emvData: JSONObject? = null,      // EMV TLV data
@@ -25,6 +36,7 @@ data class TcpMessage(
         val jsonObject = JSONObject()
         jsonObject.put("msgType", msgType)
         trmId?.let { jsonObject.put("trmId", it) }
+        transactionType?.let {jsonObject.put("transactionType", it.name) }
         status?.let { jsonObject.put("status", it) }
         amount?.let { jsonObject.put("amount", it) }
         transactionId?.let { jsonObject.put("transactionId", it) }
@@ -76,7 +88,7 @@ data class TcpMessage(
                 msgType = MSG_TYPE_TRANSACTION,
                 trmId = trmId,
                 status = STATUS_STARTED,
-                amount = amount,
+                amount = amount.toBigDecimal(),
                 transactionId = transactionId,
                 pcPosId = pcPosId
             )

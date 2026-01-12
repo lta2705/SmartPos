@@ -31,66 +31,91 @@ fun SettlementScreen(viewModel: PosViewModel, onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF121212))
-            .padding(24.dp)
     ) {
-        // Header
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(24.dp)
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White
-                )
-            }
-
-            Text(
-                text = "Settlement Report",
-                fontSize = 20.sp,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Summary Statistics
-        SummarySection(allTransactions)
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        if (allTransactions.isEmpty()) {
+            // Header
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+
                 Text(
-                    text = "No transactions available",
-                    color = Color.Gray,
-                    fontSize = 16.sp
+                    text = "Settlement Report",
+                    fontSize = 20.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
                 )
             }
-        } else {
-            Text(
-                text = "All Transactions:",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(allTransactions.sortedByDescending { it.timestamp }) { transaction ->
-                    SettlementTransactionCard(transaction = transaction)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Summary Statistics
+            SummarySection(allTransactions)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (allTransactions.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No transactions available",
+                        color = Color.Gray,
+                        fontSize = 16.sp
+                    )
+                }
+            } else {
+                Text(
+                    text = "All Transactions:",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(allTransactions.sortedByDescending { it.timestamp }) { transaction ->
+                        SettlementTransactionCard(transaction = transaction)
+                    }
                 }
             }
+        }
+
+        // Settlement Button at bottom
+        Button(
+            onClick = { viewModel.performSettlement() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .height(56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFC4FB6D)
+            ),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text(
+                text = "Perform Settlement",
+                color = Color.Black,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -98,11 +123,11 @@ fun SettlementScreen(viewModel: PosViewModel, onBack: () -> Unit) {
 @Composable
 private fun SummarySection(transactions: List<Transaction>) {
     val saleTotal = transactions
-        .filter { it.type == TransactionType.SALE && it.isVoided }
+        .filter { it.type == TransactionType.SALE && !it.isVoided }
         .sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 }
 
     val qrTotal = transactions
-        .filter { it.type == TransactionType.QR && it.isVoided }
+        .filter { it.type == TransactionType.QR && !it.isVoided }
         .sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 }
 
     val voidTotal = transactions
@@ -154,7 +179,7 @@ private fun SummarySection(transactions: List<Transaction>) {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = String.format("%.2f VND", netTotal),
+                    text = String.format("%.0f VND", netTotal),
                     color = Color(0xFFC4FB6D),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
@@ -178,7 +203,7 @@ private fun SummaryRow(label: String, amount: Double, color: Color) {
             fontSize = 14.sp
         )
         Text(
-            text = String.format("%.2f VND", amount),
+            text = String.format("%.0f VND", amount),
             color = color,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium
@@ -193,6 +218,7 @@ private fun SettlementTransactionCard(transaction: Transaction) {
         TransactionType.QR -> if (transaction.isVoided) Color(0xFF3D3D3D) else Color(0xFF2D2D2D)
         TransactionType.VOID -> Color(0xFF4D2D2D)
         TransactionType.REFUND -> Color(0xFF4D3D2D)
+        TransactionType.SETTLEMENT -> Color(0xFF4D3D2D)
     }
 
     val typeColor = when (transaction.type) {
@@ -200,6 +226,7 @@ private fun SettlementTransactionCard(transaction: Transaction) {
         TransactionType.QR -> Color(0xFF00D4FF)
         TransactionType.VOID -> Color(0xFFFF6B6B)
         TransactionType.REFUND -> Color(0xFFFF9500)
+        TransactionType.SETTLEMENT -> Color(0xFFFFD700)
     }
 
     Card(

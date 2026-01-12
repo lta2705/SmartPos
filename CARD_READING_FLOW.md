@@ -309,6 +309,7 @@ fun sendTransactionToBankConnector(
             val message = TcpMessage(
                 msgType = TcpMessage.MSG_TYPE_TRANSACTION,
                 trmId = tcpService.getTerminalId(),
+                transactionType = tcpService.
                 status = TcpMessage.STATUS_PROCESSING,
                 amount = String.format("%.2f", totalAmount),
                 transactionId = transactionId,

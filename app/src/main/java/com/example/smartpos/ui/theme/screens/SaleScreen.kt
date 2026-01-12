@@ -53,7 +53,14 @@ fun SaleScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> U
         Spacer(modifier = Modifier.height(60.dp))
 
         Text(
-            text = amount + "VND",
+            text = amount,
+            fontSize = 48.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+
+        Text(
+            text = "VND",
             fontSize = 48.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White

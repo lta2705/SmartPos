@@ -270,7 +270,7 @@ data class EmvCardData(
      */
     fun getMaskedPan(): String {
         return if (pan != null && pan.length >= 4) {
-            "**** **** **** ${pan.takeLast(4)}"
+            "${pan.take(6)} ** **** ${pan.takeLast(4)}"
         } else {
             "**** **** **** ****"
         }

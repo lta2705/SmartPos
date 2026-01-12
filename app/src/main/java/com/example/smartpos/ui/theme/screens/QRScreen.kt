@@ -1,5 +1,7 @@
 package com.example.smartpos.ui.theme.screens
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,10 +27,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smartpos.utils.QRCodeGenerator
 import com.example.smartpos.viewmodel.PosViewModel
 import com.example.smartpos.viewmodel.TransactionType
 import kotlinx.coroutines.delay
@@ -39,6 +43,7 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
     val amount by viewModel.amount.collectAsState()
     
     var qrCode by remember { mutableStateOf<String?>(null) }
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var transactionCompleted by remember { mutableStateOf(false) }
@@ -52,13 +57,25 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
                 amount = amountValue,
                 onSuccess = { qrCodeData ->
                     qrCode = qrCodeData
+                    
+                    // Generate QR code bitmap từ VietQR data
+                    qrBitmap = QRCodeGenerator.generateQRCode(qrCodeData, size = 512)
+                    
+                    if (qrBitmap == null) {
+                        errorMessage = "Failed to generate QR code"
+                    } else {
+                        // Log VietQR info để debug
+                        val qrInfo = QRCodeGenerator.parseVietQR(qrCodeData)
+                        android.util.Log.d("QRScreen", "VietQR Info: $qrInfo")
+                    }
+                    
                     isLoading = false
                     
                     // Tạo transaction ngay khi nhận được QR
                     viewModel.addTransaction(
                         type = TransactionType.QR,
                         name = "QR Payment",
-                        amount = String.format("%.2f VND", amountValue)
+                        amount = String.format("%.0f VND", amountValue)
                     )
                     
                     // Simulate waiting for bank notification
@@ -152,7 +169,38 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
                             )
                         }
                     }
+                    qrBitmap != null -> {
+                        // Hiển thị QR code bitmap thực tế
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Image(
+                                bitmap = qrBitmap!!.asImageBitmap(),
+                                contentDescription = "VietQR Code",
+                                modifier = Modifier.size(260.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (transactionCompleted) "✓ Completed" else "Scan to Pay",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (transactionCompleted) Color(0xFF4CAF50) else Color(0xFF6C5CE7)
+                            )
+                            
+                            // Hiển thị validation status
+                            if (qrCode != null && QRCodeGenerator.isValidVietQR(qrCode!!)) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "VietQR Format ✓",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF4CAF50)
+                                )
+                            }
+                        }
+                    }
                     qrCode != null -> {
+                        // Fallback nếu không generate được bitmap
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -179,7 +227,7 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
 
         if (transactionCompleted) {
             Text(
-                text = "Transaction successful!",
+                text = "Scan the QR here!",
                 fontSize = 18.sp,
                 color = Color(0xFF4CAF50),
                 fontWeight = FontWeight.Bold

@@ -46,11 +46,11 @@ fun TipScreen(viewModel: PosViewModel, onConfirm: () -> Unit) {
         ) {
             Column {
                 Text(text = "Amount", color = Color.Gray, fontSize = 14.sp)
-                Text(text = "$${String.format("%.2f", baseAmount)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = "${String.format("%.0f", baseAmount)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(text = "Total", color = Color.Gray, fontSize = 14.sp)
-                Text(text = "$${String.format("%.2f", totalAmount)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6C5CE7))
+                Text(text = "${String.format("%.2f", totalAmount)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6C5CE7))
             }
         }
 
@@ -121,7 +121,7 @@ fun TipCard(percent: Int, amount: Double, isSelected: Boolean, onClick: () -> Un
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(text = "$percent%", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(text = "$${String.format("%.2f", amount)}", fontSize = 14.sp, color = Color.Gray)
+            Text(text = "$${String.format("%.0f", amount)}", fontSize = 14.sp, color = Color.Gray)
         }
     }
 }

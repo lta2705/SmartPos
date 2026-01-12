@@ -88,7 +88,7 @@ fun BalanceScreen(viewModel: PosViewModel, onBack: () -> Unit, onPrintBalance: (
                     label1 = "Total transactions",
                     value1 = "${transactions.size}",
                     label2 = "Transactions sum",
-                    value2 = String.format("%.2f VND", totalSum)
+                    value2 = String.format("%.0f VND", totalSum)
                 )
             }
 

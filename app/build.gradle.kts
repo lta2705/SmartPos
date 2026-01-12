@@ -65,4 +65,7 @@ dependencies {
 
     // Material Icons Extended (cho các icon như Backspace, Check, v.v.)
     implementation("androidx.compose.material:material-icons-extended:1.6.1")
+
+    // ZXing for QR Code generation
+    implementation("com.google.zxing:core:3.5.3")
 }

@@ -14,6 +14,7 @@ import com.example.smartpos.utils.AmountUtils
 import com.example.smartpos.utils.DateUtils
 import com.example.smartpos.extensions.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,11 +25,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.Locale
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.UUID
 
 enum class TransactionType {
-    SALE, QR, VOID, REFUND
+    SALE, QR, VOID, REFUND,SETTLEMENT
 }
 
 data class Transaction(
@@ -37,7 +39,8 @@ data class Transaction(
     val name: String,
     val amount: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val isVoided: Boolean = false
+    val isVoided: Boolean = false,
+    val emvData: EmvCardData? = null  // Store EMV data for void/refund operations
 )
 
 class PosViewModel : ViewModel() {
@@ -332,30 +335,28 @@ class PosViewModel : ViewModel() {
         val emvData = _emvCardData.value
         val totalAmount = getTotalAmount()
 
-        addTransaction(
+        // Add transaction with EMV data
+        val newTransaction = Transaction(
             type = TransactionType.SALE,
             name = "Sale - ${card.cardScheme}",
-            amount = AmountUtils.formatAmount(totalAmount, "VND")
+            amount = AmountUtils.formatAmount(totalAmount, "VND"),
+            emvData = emvData
         )
+        _transactionHistory.update { current -> current + newTransaction }
 
         viewModelScope.launch {
             // Generate transaction ID safely
             val transactionId = _currentTransactionId.value ?: UUID.randomUUID().toString()
             
-            val message = if (emvData != null) {
-                TcpMessage.createTransactionCompleted(
+            if (emvData != null) {
+                @Suppress("UNUSED_VARIABLE")
+                val message = TcpMessage.createTransactionCompleted(
                     trmId = tcpService.getTerminalId(),
                     transactionId = transactionId,
                     emvCardData = emvData
                 )
-            } else {
-                TcpMessage.createTransactionCompletedLegacy(
-                    trmId = tcpService.getTerminalId(),
-                    transactionId = transactionId,
-                    cardData = _nfcData.value.orEmpty()
-                )
+                // Uncomment to send message: tcpService.sendTransactionMessage(message)
             }
-//            tcpService.sendTransactionMessage(message)
             _paymentState.value = PaymentState.Approved
         }
     }
@@ -375,8 +376,8 @@ class PosViewModel : ViewModel() {
     /**
      * Add transaction with thread-safe list update
      */
-    fun addTransaction(type: TransactionType, name: String, amount: String) {
-        val newTransaction = Transaction(type = type, name = name, amount = amount)
+    fun addTransaction(type: TransactionType, name: String, amount: String, emvData: EmvCardData? = null) {
+        val newTransaction = Transaction(type = type, name = name, amount = amount, emvData = emvData)
         _transactionHistory.update { current -> current + newTransaction }
     }
 
@@ -388,9 +389,10 @@ class PosViewModel : ViewModel() {
         
         viewModelScope.launch {
             try {
-                val emvData = _emvCardData.value
+                // Use EMV data from transaction instead of current state
+                val emvData = transaction.emvData
                 if (emvData == null) {
-                    Log.e(TAG, "No EMV data available for VOID")
+                    Log.e(TAG, "No EMV data available for VOID - transaction: ${transaction.id}")
                     return@launch
                 }
                 
@@ -413,10 +415,10 @@ class PosViewModel : ViewModel() {
                     msgType = TcpMessage.MSG_TYPE_TRANSACTION,
                     trmId = tcpService.getTerminalId(),
                     status = TcpMessage.STATUS_PROCESSING,
-                    amount = AmountUtils.formatAmountOnly(amount),
+                    amount = AmountUtils.formatAmountOnly(amount).toBigDecimal(),
                     transactionId = transaction.id,
                     cardData = de55,
-                    transactionType = "VOID"
+                    transactionType = TransactionType.VOID
                 )
                 
                 // Send to bank connector
@@ -427,7 +429,8 @@ class PosViewModel : ViewModel() {
                 _transactionHistory.update { list ->
                     list.map { if (it.id == transaction.id) it.copy(isVoided = true) else it }
                 }
-                addTransaction(TransactionType.VOID, "Void - ${transaction.name}", transaction.amount)
+                // Create VOID transaction with EMV data
+                addTransaction(TransactionType.VOID, "Void - ${transaction.name}", transaction.amount, emvData)
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending VOID to bank: ${e.message}", e)
@@ -443,9 +446,10 @@ class PosViewModel : ViewModel() {
         
         viewModelScope.launch {
             try {
-                val emvData = _emvCardData.value
+                // Use EMV data from transaction instead of current state
+                val emvData = transaction.emvData
                 if (emvData == null) {
-                    Log.e(TAG, "No EMV data available for REFUND")
+                    Log.e(TAG, "No EMV data available for REFUND - transaction: ${transaction.id}")
                     return@launch
                 }
                 
@@ -468,9 +472,10 @@ class PosViewModel : ViewModel() {
                     msgType = TcpMessage.MSG_TYPE_TRANSACTION,
                     trmId = tcpService.getTerminalId(),
                     status = TcpMessage.STATUS_PROCESSING,
-                    amount = AmountUtils.formatAmountOnly(amount),
+                    amount = AmountUtils.formatAmountOnly(amount).toBigDecimal(),
                     transactionId = transaction.id,
-                    cardData = de55
+                    cardData = de55,
+                    transactionType = TransactionType.REFUND
                 )
                 
                 // Send to bank connector
@@ -481,7 +486,8 @@ class PosViewModel : ViewModel() {
                 _transactionHistory.update { list ->
                     list.map { if (it.id == transaction.id) it.copy(isVoided = true) else it }
                 }
-                addTransaction(TransactionType.REFUND, "Refund - ${transaction.name}", transaction.amount)
+                // Create REFUND transaction with EMV data
+                addTransaction(TransactionType.REFUND, "Refund - ${transaction.name}", transaction.amount, emvData)
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending REFUND to bank: ${e.message}", e)
@@ -548,10 +554,10 @@ class PosViewModel : ViewModel() {
                     msgType = TcpMessage.MSG_TYPE_TRANSACTION,
                     trmId = tcpService.getTerminalId(),
                     status = TcpMessage.STATUS_PROCESSING,
-                    amount = AmountUtils.formatAmountOnly(totalAmount),
+                    amount = AmountUtils.formatAmountOnly(totalAmount).toBigDecimal(),
                     transactionId = transactionId,
                     cardData = de55,
-                    transactionType = "SALE"
+                    transactionType = TransactionType.SALE
                 )
                 
                 // Check if TCP connection is available
@@ -588,7 +594,34 @@ class PosViewModel : ViewModel() {
     // Removed duplicate date/time methods - now using DateUtils
     
     /**
+     * Perform settlement - send settlement request to bank connector
+     */
+    fun performSettlement() {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Performing settlement...")
+                
+                // Build settlement message
+                val settlementMessage = TcpMessage(
+                    msgType = TcpMessage.MSG_TYPE_TRANSACTION,
+                    trmId = tcpService.getTerminalId(),
+                    status = TcpMessage.STATUS_PROCESSING,
+                    transactionType = TransactionType.SETTLEMENT
+                )
+                
+                // Send to bank connector
+                tcpService.sendToBankConnector(settlementMessage)
+                Log.d(TAG, "Settlement request sent to bank connector")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error performing settlement: ${e.message}", e)
+            }
+        }
+    }
+    
+    /**
      * Gửi QR transaction qua HTTP API tới bank connector
+     * Không kèm dữ liệu EMV - chỉ gửi thông tin giao dịch cơ bản
      */
     fun sendQRTransactionToBank(
         amount: Double,
@@ -597,11 +630,69 @@ class PosViewModel : ViewModel() {
     ) {
         viewModelScope.launch {
             try {
-                // TODO: Implement HTTP API call to bank connector
-                delay(1500)
-                val mockQRCode = "QR_CODE_DATA_${System.currentTimeMillis()}"
+                Log.d(TAG, "Sending QR transaction to bank connector via HTTP")
                 
-                onSuccess(mockQRCode)
+                // Lấy thông tin từ TCP message
+                val transactionId = _currentTransactionId.value ?: UUID.randomUUID().toString()
+                val terminalId = _currentTerminalId.value.ifEmpty { tcpService.getTerminalId() }
+                val pcPosId = _currentPcPosId.value
+                
+                // Tạo URL request
+                val url = java.net.URL("${com.example.smartpos.network.TcpConfig.BANK_CONNECTOR_HTTP_URL}/create_qr")
+                val connection = withContext(Dispatchers.IO) {
+                    url.openConnection() as java.net.HttpURLConnection
+                }
+                
+                connection.apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    doOutput = true
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                }
+                
+                // Tạo JSON request body (không có EMV data)
+                val requestBody = JSONObject().apply {
+                    put("transactionId", transactionId)
+                    put("terminalId", terminalId)
+                    put("amount", amount)
+                    put("currency", _currentCurrCd.value)
+                    put("transactionType", "QR")
+                    pcPosId?.let { put("pcPosId", it) }
+                }
+                
+                Log.d(TAG, "QR Request: $requestBody")
+                
+                // Gửi request
+                withContext(Dispatchers.IO) {
+                    connection.outputStream.use { os ->
+                        os.write(requestBody.toString().toByteArray())
+                    }
+                    
+                    // Đọc response
+                    val responseCode = connection.responseCode
+                    Log.d(TAG, "QR Response code: $responseCode")
+                    
+                    if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                        val response = connection.inputStream.bufferedReader().use { it.readText() }
+                        Log.d(TAG, "QR Response: $response")
+                        
+                        // Parse response JSON để lấy QR code text
+                        val responseJson = JSONObject(response)
+                        val qrCodeData = responseJson.optString("qrCode") 
+                            ?: responseJson.optString("qrData")
+                            ?: responseJson.optString("data")
+                            ?: response // Fallback to full response if no specific field
+                        
+                        onSuccess(qrCodeData)
+                    } else {
+                        val errorResponse = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                        Log.e(TAG, "QR Error response: $errorResponse")
+                        onError("Failed to create QR code: HTTP $responseCode")
+                    }
+                    
+                    connection.disconnect()
+                }
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error creating QR transaction: ${e.message}", e)

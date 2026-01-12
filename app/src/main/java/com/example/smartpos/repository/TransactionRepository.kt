@@ -89,6 +89,7 @@ class TransactionRepository {
                 TransactionType.QR -> if (transaction.isVoided) 0.0 else amount
                 TransactionType.VOID -> -amount  // VOID subtracts
                 TransactionType.REFUND -> -amount  // REFUND subtracts
+                TransactionType.SETTLEMENT -> 0.0
             }
         }
     }

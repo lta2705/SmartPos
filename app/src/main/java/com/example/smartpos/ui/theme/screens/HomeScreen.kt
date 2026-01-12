@@ -54,7 +54,7 @@ fun HomeScreen(
                 .padding(top = 40.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("TouchPay", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+//            Text("TouchPay", fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Spacer(modifier = Modifier.height(20.dp))
 
             // Giả lập hình ảnh tay quẹt thẻ
@@ -62,12 +62,11 @@ fun HomeScreen(
                 imageVector = Icons.Default.Nfc,
                 contentDescription = null,
                 modifier = Modifier.size(60.dp),
-                tint = Color.LightGray
+                tint = Color.Black
             )
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 2. Hiển thị thời gian thực tế thay vì text tĩnh
             Text(
                 text = currentTime.format(timeFormatter),
                 fontSize = 48.sp,
@@ -80,7 +79,6 @@ fun HomeScreen(
             )
         }
 
-        // Phần Menu màu tím
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = PurplePrimary,

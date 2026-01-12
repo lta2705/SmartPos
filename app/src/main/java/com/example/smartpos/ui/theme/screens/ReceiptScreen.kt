@@ -343,7 +343,7 @@ private fun BalanceReceiptContent(transactions: List<Transaction>, totalSum: Dou
                     color = Color.Black
                 )
                 Text(
-                    text = String.format("%.2f VND", totalSum),
+                    text = String.format("%.0f VND", totalSum),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black

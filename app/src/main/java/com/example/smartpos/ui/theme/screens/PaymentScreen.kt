@@ -132,7 +132,7 @@ fun PaymentScreen(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Amount", color = Color.Gray, fontSize = 16.sp)
             Text(
-                text = "${String.format("%.2f", totalAmount)} VND",
+                text = "${String.format("%.0f", totalAmount)} VND",
                 fontSize = 42.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
