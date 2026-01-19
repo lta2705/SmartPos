@@ -11,15 +11,15 @@ object TcpConfig {
     const val DEV_PORT = 8089
     
     // Production Environment
-    const val PROD_HOST = "192.168.3.101"
+    const val PROD_HOST = "192.168.100.174"
     const val PROD_PORT = 8089
     
     // Bank Connector Configuration
-    const val BANK_CONNECTOR_HOST = DEV_HOST  // Same host as main server
+    const val BANK_CONNECTOR_HOST = PROD_HOST  // Same host as main server
     const val BANK_CONNECTOR_PORT = 8888
     
     // Current Environment (thay đổi theo môi trường hiện tại)
-    const val CURRENT_HOST = DEV_HOST
+    const val CURRENT_HOST = PROD_HOST
     const val CURRENT_PORT = PROD_PORT
     
     // Timeout Settings
@@ -38,5 +38,5 @@ object TcpConfig {
     // Bank Connector Server (will be provided later)
 ////    const val BANK_CONNECTOR_HOST = "192.168.70.69"  // TODO: Update with actual bank connector host
 //    const val BANK_CONNECTOR_PORT = 8888         // TODO: Update with actual bank connector port
-    const val BANK_CONNECTOR_HTTP_URL = "http://${DEV_HOST}:8081" // For QR HTTP API
+    const val BANK_CONNECTOR_HTTP_URL = "http://${PROD_HOST}:8081" // For QR HTTP API
 }

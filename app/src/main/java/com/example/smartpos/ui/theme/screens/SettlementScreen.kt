@@ -26,6 +26,7 @@ import java.util.*
 @Composable
 fun SettlementScreen(viewModel: PosViewModel, onBack: () -> Unit) {
     val allTransactions by viewModel.transactionHistory.collectAsState()
+    val isSettling by viewModel.isSettling.collectAsState()
 
     Column(
         modifier = Modifier
@@ -101,21 +102,30 @@ fun SettlementScreen(viewModel: PosViewModel, onBack: () -> Unit) {
         // Settlement Button at bottom
         Button(
             onClick = { viewModel.performSettlement() },
+            enabled = !isSettling,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 16.dp)
                 .height(56.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFC4FB6D)
+                containerColor = Color(0xFFC4FB6D),
+                disabledContainerColor = Color.Gray
             ),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text(
-                text = "Perform Settlement",
-                color = Color.Black,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
+            if (isSettling) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color.Black
+                )
+            } else {
+                Text(
+                    text = "Perform Settlement",
+                    color = Color.Black,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -138,7 +148,7 @@ private fun SummarySection(transactions: List<Transaction>) {
         .filter { it.type == TransactionType.REFUND }
         .sumOf { it.amount.replace(" VND", "").toDoubleOrNull() ?: 0.0 }
 
-    val netTotal = saleTotal + qrTotal - voidTotal - refundTotal
+    val netTotal = saleTotal + qrTotal
 
     Card(
         modifier = Modifier.fillMaxWidth(),

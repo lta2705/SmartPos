@@ -239,7 +239,7 @@ class TcpConnectionService {
         val amountStr = when {
             jsonObject.has("TotTrAmt") -> {
                 val totAmt = jsonObject.optDouble("TotTrAmt", 0.0)
-                String.format(Locale.US, "%.2f", totAmt)  // Use US locale for period separator
+                String.format(Locale.US, "%.0f", totAmt)  // Use US locale for period separator
             }
             jsonObject.has("amount") -> jsonObject.optString("amount", null)
             else -> null

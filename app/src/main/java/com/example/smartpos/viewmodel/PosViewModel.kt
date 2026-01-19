@@ -593,12 +593,17 @@ class PosViewModel : ViewModel() {
     
     // Removed duplicate date/time methods - now using DateUtils
     
+    // Settlement state
+    private val _isSettling = MutableStateFlow(false)
+    val isSettling: StateFlow<Boolean> = _isSettling.asStateFlow()
+    
     /**
      * Perform settlement - send settlement request to bank connector
      */
     fun performSettlement() {
         viewModelScope.launch {
             try {
+                _isSettling.value = true
                 Log.d(TAG, "Performing settlement...")
                 
                 // Build settlement message
@@ -613,8 +618,17 @@ class PosViewModel : ViewModel() {
                 tcpService.sendToBankConnector(settlementMessage)
                 Log.d(TAG, "Settlement request sent to bank connector")
                 
+                // Simulate settlement processing time
+                delay(2000)
+                
+                // Clear all transaction data after successful settlement
+                _transactionHistory.value = emptyList()
+                Log.d(TAG, "Settlement completed and data cleared")
+                
             } catch (e: Exception) {
                 Log.e(TAG, "Error performing settlement: ${e.message}", e)
+            } finally {
+                _isSettling.value = false
             }
         }
     }

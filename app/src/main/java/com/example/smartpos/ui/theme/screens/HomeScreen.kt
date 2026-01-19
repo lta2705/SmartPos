@@ -94,7 +94,7 @@ fun HomeScreen(
                 item { ActionCard("Sale", Icons.Default.ShoppingCart, onSaleClick) }
                 item { ActionCard("QR", Icons.Default.QrCode, onQRClick) }
                 item { ActionCard("Void", Icons.Default.RemoveCircle, onVoidClick) }
-                item { ActionCard("Refund", Icons.Default.History, onRefundClick) }
+//                item { ActionCard("Refund", Icons.Default.History, onRefundClick) }
                 item { ActionCard("Balance", Icons.Default.AccountBalanceWallet, onBalanceClick) }
                 item { ActionCard("Settlement", Icons.Default.Assessment, onSettlementClick) }
             }

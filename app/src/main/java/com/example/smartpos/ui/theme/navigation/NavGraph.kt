@@ -172,6 +172,27 @@ fun PosNavGraph(navController: NavHostController, viewModel: PosViewModel) {
                     navController.navigate("home") {
                         popUpTo("home") { inclusive = true }
                     }
+                },
+                onPrintReceipt = {
+                    // Get the latest transaction ID to print
+                    val latestTransaction = viewModel.transactionHistory.value.lastOrNull()
+                    latestTransaction?.let {
+                        navController.navigate("receipt/${it.id}")
+                    }
+                }
+            )
+        }
+        
+        // Receipt screen for single transaction
+        composable("receipt/{transactionId}") { backStackEntry ->
+            val transactionId = backStackEntry.arguments?.getString("transactionId")
+            ReceiptScreen(
+                viewModel = viewModel,
+                transactionId = transactionId,
+                onBack = { navController.popBackStack() },
+                onPrint = {
+                    // TODO: Implement actual printer integration
+                    android.util.Log.d("Receipt", "Print receipt requested")
                 }
             )
         }

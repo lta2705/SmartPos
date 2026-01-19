@@ -77,7 +77,9 @@ fun QRScreen(viewModel: PosViewModel, onConfirm: () -> Unit, onReturn: () -> Uni
                         name = "QR Payment",
                         amount = String.format("%.0f VND", amountValue)
                     )
-                    
+
+                    viewModel.sendTransactionStarted(amountValue)
+                    isLoading = false
                     // Simulate waiting for bank notification
                     // TODO: Replace with actual bank notification listener
                     kotlinx.coroutines.GlobalScope.launch {

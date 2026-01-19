@@ -79,9 +79,9 @@ fun BalanceScreen(viewModel: PosViewModel, onBack: () -> Unit, onPrintBalance: (
                 SummaryCard(
                     modifier = Modifier.weight(1f),
                     label1 = "Opening time",
-                    value1 = "10:00",
+                    value1 = "9:00 AM",
                     label2 = "Closing time",
-                    value2 = "N/A"
+                    value2 = "21:00 PM"
                 )
                 SummaryCard(
                     modifier = Modifier.weight(1f),

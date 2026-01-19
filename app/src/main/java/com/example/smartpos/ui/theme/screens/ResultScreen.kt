@@ -21,7 +21,7 @@ import com.example.smartpos.ui.theme.LimeGreen
 import com.example.smartpos.viewmodel.PosViewModel
 
 @Composable
-fun ResultScreen(viewModel: PosViewModel, onClose: () -> Unit) {
+fun ResultScreen(viewModel: PosViewModel, onClose: () -> Unit, onPrintReceipt: () -> Unit = {}) {
     val amount by viewModel.amount.collectAsState()
 
     Column(
@@ -69,7 +69,7 @@ fun ResultScreen(viewModel: PosViewModel, onClose: () -> Unit) {
                 .padding(16.dp)
         ) {
             OutlinedButton(
-                onClick = { /* In hóa đơn */ },
+                onClick = onPrintReceipt,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp)
             ) {

@@ -294,7 +294,7 @@ fun CardInformation(cardData: CardData) {
                 )
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (isValid) Color(0xFF4CAF50).copy(alpha = 0.2f) else Color(0xFFFF6B6B).copy(alpha = 0.2f)
+                    color = if (isValid) Color(0xFF4CAF50).copy(alpha = 0.0f) else Color(0xFFFF6B6B).copy(alpha = 0.2f)
                 ) {
                     Text(
                         text = if (isValid) "Valid" else "Check Expiry",
